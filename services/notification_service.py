@@ -1,21 +1,22 @@
 # services/notification_service.py
 
-def build_appointment_message(data: dict):
-    """
-    Builds WhatsApp notification message for owner & employee
-    """
+def build_appointment_message(booking: dict):
+    customer = booking.get("customer", {})
+    services = booking.get("services", [])
 
-    customer_name = data.get("customer_name", "N/A")
-    age = data.get("age", "N/A")
-    phone = data.get("customer_phone", "N/A")
-    email = data.get("email", "N/A")
+    customer_name = customer.get("name", "N/A")
+    phone = customer.get("phone", "N/A")
+    email = customer.get("email", "N/A")
+    age = customer.get("age", "N/A")
 
-    salon_name = data.get("salon_name", "N/A")
-    branch = data.get("branch", "N/A")
-    employee_name = data.get("employee_name", "N/A")
-    service_name = data.get("service_name", "N/A")
-    slot_time = data.get("slot_time", "N/A")
-    date = data.get("date", "N/A")
+    salon_name = booking.get("salonName", "N/A")
+    branch = booking.get("branch", "N/A")
+    employee_name = booking.get("employeeName", "N/A")
+
+    service_name = services[0].get("serviceName", "N/A") if services else "N/A"
+
+    slot_time = booking.get("startTime", "N/A")
+    date = booking.get("date", "N/A")
 
     message = (
         "📢 *New Appointment Confirmed*\n\n"

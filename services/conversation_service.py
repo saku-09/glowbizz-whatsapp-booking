@@ -10,32 +10,43 @@ from services.firebase_service import (
     save_owner_lead,
     save_whatsapp_booking,
     is_slot_available,
-    get_salon_timings
+    get_salon_timings,
+    get_booked_slots_from_salon_node,
+    get_owner_phone          # 🔥 IMPORTANT
 )
+
+# 🔔 Notification services
+from services.notification_service import build_appointment_message
+from services.whatsapp_service import send_whatsapp_message
 
 from datetime import datetime, timedelta
 
 
 # =====================================================
-# Helper: Generate slots every 30 minutes
+# 🔥 Generate slots by SERVICE DURATION
 # =====================================================
-def generate_slots(open_time: str, close_time: str, step_minutes=30):
+def generate_slots_by_duration(open_time: str, close_time: str, service_duration: int):
     slots = []
+
     start = datetime.strptime(open_time, "%H:%M")
     end = datetime.strptime(close_time, "%H:%M")
 
     current = start
-    while current + timedelta(minutes=step_minutes) <= end:
+    while current + timedelta(minutes=service_duration) <= end:
         slots.append(current.strftime("%H:%M"))
-        current += timedelta(minutes=step_minutes)
+        current += timedelta(minutes=service_duration)
 
     return slots
 
 
 # =====================================================
-# MAIN CONVERSATION HANDLER
+# MAIN CONVERSATION HANDLER (NO AUTH UID, FIREBASE PUSH STYLE)
 # =====================================================
 def handle_conversation(user_id: str, message: str):
+    """
+    user_id -> whatsapp session id / phone
+    """
+
     session = SESSIONS.get(user_id, {
         "state": "START",
         "data": {}
@@ -82,7 +93,7 @@ def handle_conversation(user_id: str, message: str):
             return "Please reply with 1 (Owner) or 2 (Customer)."
 
     # =====================================================
-    # OWNER FLOW (unchanged)
+    # 🧑‍💼 OWNER FLOW
     # =====================================================
 
     if state == "OWNER_ENTRY":
@@ -145,7 +156,7 @@ def handle_conversation(user_id: str, message: str):
             return "Please reply with 1, 2, or 3."
 
     # =====================================================
-    # CUSTOMER BOOKING FLOW
+    # 👩‍💼 CUSTOMER FLOW
     # =====================================================
 
     # Step 1 – City
@@ -205,32 +216,28 @@ def handle_conversation(user_id: str, message: str):
             data["service"] = service
             session["state"] = "CUSTOMER_DATE"
 
-            return "Please enter appointment date (DD-MM-YYYY or YYYY-MM-DD)."
+            return "Please enter appointment date (DD-MM-YYYY)."
 
         except:
             return "Please reply with a valid number."
 
     # =====================================================
-    # Step 4 – Date & Slots (🔥 FINAL CORRECT VERSION)
+    # Step 4 – Date & SLOT GENERATION
     # =====================================================
     if state == "CUSTOMER_DATE":
         data["date"] = msg
+
         salon = data["salon"]
         salon_id = salon["id"]
+        service = data["service"]
 
         try:
-            if len(msg.split("-")[0]) == 2:
-                dt = datetime.strptime(msg, "%d-%m-%Y")
-            else:
-                dt = datetime.strptime(msg, "%Y-%m-%d")
+            dt = datetime.strptime(msg, "%d-%m-%Y")
         except:
             return "⛔ Invalid date format. Please use DD-MM-YYYY."
 
-        if dt.date() < datetime.now().date():
-            return "⛔ You cannot book past dates. Please choose a future date."
-
         day_name = dt.strftime("%A").lower()
-        normalized_date = dt.strftime("%d-%m-%Y")  # 🔥 ALWAYS YYYY-MM-DD
+        normalized_date = dt.strftime("%d-%m-%Y")
 
         timings = get_salon_timings(salon_id, day_name)
 
@@ -243,39 +250,34 @@ def handle_conversation(user_id: str, message: str):
         open_time = timings.get("open")
         close_time = timings.get("close")
 
-        all_slots = generate_slots(open_time, close_time, step_minutes=30)
+        service_duration = int(service["duration"])
 
-        employees = find_employees_by_salon(salon_id)
+        all_slots = generate_slots_by_duration(
+            open_time=open_time,
+            close_time=close_time,
+            service_duration=service_duration
+        )
 
-        final_free_slots = []
+        booked_slots = get_booked_slots_from_salon_node(
+            salon_id=salon_id,
+            date=normalized_date
+        )
 
-        for t in all_slots:
-            for emp in employees:
-                ok = is_slot_available(
-                    salon_id=salon_id,
-                    employee_id=emp["employeeId"],
-                    date=normalized_date,
-                    start_time=t,
-                    duration=data["service"]["duration"]
-                )
-                if ok:
-                    final_free_slots.append(t)
-                    break
+        blocked_times = set(b["startTime"] for b in booked_slots)
+        free_slots = [t for t in all_slots if t not in blocked_times]
 
-        print("🔥 Final free slots:", final_free_slots)
-
-        if not final_free_slots:
+        if not free_slots:
             return (
                 "Sorry 😔 No free slots available on this date.\n\n"
                 "Please choose another date."
             )
 
         data["normalized_date"] = normalized_date
-        data["generated_slots"] = final_free_slots
+        data["generated_slots"] = free_slots
         session["state"] = "CUSTOMER_SELECT_SLOT"
 
         response = f"Available time slots on {msg}:\n\n"
-        for idx, t in enumerate(final_free_slots, start=1):
+        for idx, t in enumerate(free_slots, start=1):
             response += f"{idx}️⃣ {t}\n"
 
         response += "\nReply with the number to select time."
@@ -290,9 +292,7 @@ def handle_conversation(user_id: str, message: str):
             if choice < 0 or choice >= len(slots):
                 return "Please reply with a valid number."
 
-            selected_time = slots[choice]
-            data["time"] = selected_time
-
+            data["time"] = slots[choice]
             session["state"] = "CUSTOMER_NAME"
             return "Great 👍\n\nPlease enter your Full Name."
 
@@ -300,7 +300,7 @@ def handle_conversation(user_id: str, message: str):
             return "Please reply with a valid number."
 
     # =====================================================
-    # CUSTOMER DETAILS (unchanged)
+    # CUSTOMER DETAILS
     # =====================================================
 
     if state == "CUSTOMER_NAME":
@@ -356,7 +356,7 @@ def handle_conversation(user_id: str, message: str):
         )
 
     # =====================================================
-    # FINAL CONFIRM
+    # FINAL CONFIRM (WITH NOTIFICATION)
     # =====================================================
     if state == "CUSTOMER_CONFIRM":
         if msg.lower() == "yes":
@@ -382,6 +382,7 @@ def handle_conversation(user_id: str, message: str):
                 session["state"] = "CUSTOMER_DATE"
                 return "⛔ Slot just booked. Please choose another time."
 
+            # 🔥 FINAL BOOKING OBJECT
             booking = {
                 "customer": {
                     "name": data["customer_name"],
@@ -403,26 +404,62 @@ def handle_conversation(user_id: str, message: str):
                     }
                 ],
 
-                "date": data["normalized_date"],  # 🔥 YYYY-MM-DD
+                "date": data["normalized_date"],
                 "startTime": data["time"],
 
                 "totalAmount": service["price"],
                 "totalDuration": service["duration"],
 
+                "paymentMode": "online",
                 "paymentStatus": "pending",
+
                 "status": "confirmed",
 
                 "mode": "whatsapp",
                 "type": "salon",
 
+                # Metadata
                 "ownerUid": salon.get("ownerUid"),
                 "salonName": salon["name"],
                 "branch": salon["address"],
                 "employeeName": assigned_employee["name"]
             }
 
+            # 🔥 SAVE BOOKING
             save_whatsapp_booking(salon["id"], booking)
 
+            # =====================================================
+            # 🔔 SEND NOTIFICATIONS (CORRECT OWNER PHONE FLOW)
+            # =====================================================
+            print("🔔 Building notification message...")
+            notification_msg = build_appointment_message(booking)
+            print("🔔 Notification message built:\n", notification_msg)
+
+            # 🔥 FETCH OWNER PHONE USING ownerUid
+            owner_uid = salon.get("ownerUid")
+            print("👤 Owner UID:", owner_uid)
+
+            owner_phone = None
+            if owner_uid:
+                owner_phone = get_owner_phone(owner_uid)
+
+            print("📞 Owner phone (from admin node):", owner_phone)
+
+            if owner_phone:
+                send_whatsapp_message(owner_phone, notification_msg)
+            else:
+                print("⚠️ Owner phone not found in admin node")
+
+            # 🔥 SEND TO EMPLOYEE (ONLY IF VALID)
+            employee_phone = assigned_employee.get("phone")
+            print("📞 Employee phone:", employee_phone)
+
+            if employee_phone and employee_phone != "0000000000":
+                send_whatsapp_message(employee_phone, notification_msg)
+            else:
+                print("⚠️ Valid employee phone not found, skipping employee notification")
+
+            # Clear session
             SESSIONS.pop(user_id, None)
 
             return (
@@ -444,4 +481,5 @@ def handle_conversation(user_id: str, message: str):
     # =====================================================
     # FALLBACK
     # =====================================================
+
     return "Sorry, I did not understand. Please type HI to start again."

@@ -14,6 +14,7 @@ def chat():
     if not user_id or not message:
         return jsonify({"error": "user_id and message required"}), 400
 
+    # 🔥 ONLY 2 ARGUMENTS
     reply = handle_conversation(user_id, message)
 
     return jsonify({
