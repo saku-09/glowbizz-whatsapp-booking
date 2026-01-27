@@ -16,8 +16,8 @@ from services.firebase_service import (
 
 def find_salons_by_city(city: str):
     """
-    Fetch salons filtered by city
-    Used in CUSTOMER_CITY step
+    Fetch salons filtered by city.
+    Used in CUSTOMER_CITY step.
     """
     if not city:
         return []
@@ -30,8 +30,8 @@ def find_salons_by_city(city: str):
 
 def find_services_by_salon(salon_id: str):
     """
-    Fetch all services of a salon
-    Used in CUSTOMER_SELECT_SERVICE step
+    Fetch all services of a salon.
+    Used in CUSTOMER_SELECT_SERVICE step.
     """
     if not salon_id:
         return []
@@ -44,8 +44,8 @@ def find_services_by_salon(salon_id: str):
 
 def find_employees_by_salon(salon_id: str):
     """
-    Fetch all active employees of a salon
-    Used in final slot assignment
+    Fetch all active employees of a salon.
+    Used in final slot assignment.
     """
     if not salon_id:
         return []
@@ -58,7 +58,7 @@ def find_employees_by_salon(salon_id: str):
 
 def check_slot_available(salon_id, employee_id, date, start_time, duration):
     """
-    Check if a particular employee is free for given slot & duration
+    Check if a particular employee is free for given slot & duration.
 
     date format MUST be: DD-MM-YYYY
     """
@@ -77,10 +77,12 @@ def check_slot_available(salon_id, employee_id, date, start_time, duration):
 
 def find_salon_timings(salon_id: str, day_name: str):
     """
-    Fetch open/close timings for a salon on a given day
+    Fetch open/close timings for a salon on a given day.
 
     day_name example: "monday", "tuesday"
     """
+    if not salon_id or not day_name:
+        return None
     return get_salon_timings(salon_id, day_name)
 
 
@@ -93,11 +95,16 @@ def save_whatsapp_booking_and_notify(salon_id: str, booking_data: dict):
     Save booking under:
     salonandspa/appointments/salon/{salonId}
 
-    Also internally saves slot under:
-    salonandspa/salons/{salonId}/slots/{DD-MM-YYYY}
+    Internally this also:
+    - Creates customer
+    - Saves booking history
+    - Saves slot under salons/{salonId}/slots/{DD-MM-YYYY}
 
     This is just a clean wrapper over firebase_service.
     """
+
+    if not salon_id or not booking_data:
+        return None
 
     return save_whatsapp_booking(salon_id, booking_data)
 
@@ -108,6 +115,8 @@ def save_whatsapp_booking_and_notify(salon_id: str, booking_data: dict):
 
 def save_owner_lead_and_notify(lead_data: dict):
     """
-    Save owner lead during owner registration flow
+    Save owner lead during owner registration flow.
     """
+    if not lead_data:
+        return None
     return save_owner_lead(lead_data)

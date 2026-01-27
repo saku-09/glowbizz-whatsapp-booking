@@ -1,6 +1,15 @@
 # services/notification_service.py
 
+# =====================================================
+# 🔔 BUILD CONFIRMATION MESSAGE
+# =====================================================
+
 def build_appointment_message(booking: dict):
+    """
+    Builds WhatsApp notification message for NEW APPOINTMENT confirmation
+    Sent to owner & employee
+    """
+
     customer = booking.get("customer", {})
     services = booking.get("services", [])
 
@@ -31,6 +40,40 @@ def build_appointment_message(booking: dict):
         f"📅 Date: {date}\n"
         f"⏰ Time: {slot_time}\n\n"
         "Please prepare for the appointment.\n"
+        "— Glowbizz System"
+    )
+
+    return message
+
+
+# =====================================================
+# ❌ BUILD CANCELLATION MESSAGE
+# =====================================================
+
+def build_cancel_message(cancel_data: dict):
+    """
+    Builds WhatsApp notification message for APPOINTMENT CANCELLATION
+    Sent to owner & employee
+    """
+
+    customer_name = cancel_data.get("customerName", "N/A")
+    phone = cancel_data.get("customerPhone", "N/A")
+
+    salon_name = cancel_data.get("salonName", "N/A")
+    service_name = cancel_data.get("serviceName", "N/A")
+
+    date = cancel_data.get("date", "N/A")
+    slot_time = cancel_data.get("startTime", "N/A")
+
+    message = (
+        "❌ *Appointment Cancelled*\n\n"
+        f"👤 Customer: {customer_name}\n"
+        f"📞 Phone: {phone}\n\n"
+        f"🏬 Salon: {salon_name}\n"
+        f"💆 Service: {service_name}\n"
+        f"📅 Date: {date}\n"
+        f"⏰ Time: {slot_time}\n\n"
+        "This appointment has been cancelled by the customer.\n"
         "— Glowbizz System"
     )
 

@@ -22,16 +22,13 @@ print("🔥 Firebase initialized successfully")
 # =====================================================
 def normalize_date(raw_date: str):
     try:
-        # If starts with year → YYYY-MM-DD
         if len(raw_date.split("-")[0]) == 4:
             dt = datetime.strptime(raw_date, "%Y-%m-%d")
         else:
             dt = datetime.strptime(raw_date, "%d-%m-%Y")
 
-        return dt.strftime("%d-%m-%Y")   # 🔥 FINAL FORMAT
-
-    except Exception as e:
-        print("⛔ Date normalize failed:", raw_date, e)
+        return dt.strftime("%d-%m-%Y")
+    except:
         return None
 
 
@@ -63,7 +60,12 @@ def get_salons_by_city(city: str):
     for salon_id, salon in all_salons.items():
         address_raw = salon.get("address", "")
         branch_raw = salon.get("branch", "")
-        name_raw = salon.get("name") or salon.get("salonName") or ""
+        name_raw = (
+            salon.get("branch") or
+            salon.get("name") or
+            salon.get("salonName") or
+            ""
+        )
 
         if city.lower() in address_raw.lower() or city.lower() in branch_raw.lower():
             results.append({
@@ -90,7 +92,7 @@ def get_services_by_salon(salon_id: str):
             "serviceId": sid,
             "serviceName": s.get("name"),
             "price": int(s.get("price") or 0),
-            "duration": int(s.get("duration") or 0)   # minutes
+            "duration": int(s.get("duration") or 0)
         })
 
     return results
@@ -129,17 +131,16 @@ def get_salon_timings(salon_id: str, day_name: str):
 
         return {
             "isOpen": timings.get("isOpen", True),
-            "open": timings.get("open"),    # "10:00"
-            "close": timings.get("close")  # "18:00"
+            "open": timings.get("open"),
+            "close": timings.get("close")
         }
 
-    except Exception as e:
-        print("❌ Error fetching salon timings:", e)
+    except:
         return None
 
 
 # =====================================================
-# 🔎 READ BOOKED SLOTS FROM SALON SLOTS NODE
+# 🔎 READ BOOKED SLOTS
 # =====================================================
 def get_booked_slots_from_salon_node(salon_id: str, date: str):
     try:
@@ -167,8 +168,7 @@ def get_booked_slots_from_salon_node(salon_id: str, date: str):
 
         return booked
 
-    except Exception as e:
-        print("❌ Error reading salon slots:", e)
+    except:
         return []
 
 
@@ -187,7 +187,6 @@ def is_slot_available(salon_id, employee_id, date, start_time, duration) -> bool
             f"{normalized_date} {start_time}", "%d-%m-%Y %H:%M"
         )
     except:
-        print("⛔ Invalid requested time:", normalized_date, start_time)
         return False
 
     req_end = req_start + timedelta(minutes=int(duration))
@@ -210,7 +209,7 @@ def is_slot_available(salon_id, employee_id, date, start_time, duration) -> bool
 
 
 # =====================================================
-# 👤 CREATE CUSTOMER (FIREBASE-STYLE ID)
+# 👤 CREATE CUSTOMER
 # =====================================================
 def create_customer(customer_data: dict):
     try:
@@ -236,7 +235,7 @@ def create_customer(customer_data: dict):
 
 
 # =====================================================
-# 🧾 SAVE BOOKING HISTORY UNDER CUSTOMER NODE
+# 🧾 SAVE BOOKING UNDER CUSTOMER
 # =====================================================
 def save_booking_under_customer(customer_id: str, appointment_id: str, booking: dict):
     try:
@@ -269,17 +268,15 @@ def save_booking_under_customer(customer_id: str, appointment_id: str, booking: 
 
 
 # =====================================================
-# 📅 SAVE WHATSAPP BOOKING (MAIN ENTRY POINT)
+# 📅 SAVE WHATSAPP BOOKING
 # =====================================================
 def save_whatsapp_booking(salon_id: str, booking_data: dict):
     ref = db.reference(f"salonandspa/appointments/salon/{salon_id}")
 
-    # 🔥 Create customer
     customer_id = create_customer(
         customer_data=booking_data["customer"]
     )
 
-    # 🔥 Build booking object
     booking = {
         "appointmentId": "",
         "createdAt": int(time.time() * 1000),
@@ -306,27 +303,24 @@ def save_whatsapp_booking(salon_id: str, booking_data: dict):
         "mode": "whatsapp",
         "type": "salon",
 
+        "ownerUid": booking_data.get("ownerUid"),
         "salonName": booking_data.get("salonName", ""),
         "branch": booking_data.get("branch", ""),
         "employeeName": booking_data.get("employeeName", "")
     }
 
-    # 1️⃣ Save appointment
     new_ref = ref.push()
     booking["appointmentId"] = new_ref.key
     new_ref.set(booking)
 
     print("🔥 WhatsApp booking saved:", new_ref.key)
-    print("👤 Customer ID (Firebase style):", customer_id)
 
-    # 2️⃣ Save under customer history
     save_booking_under_customer(
         customer_id=customer_id,
         appointment_id=new_ref.key,
         booking=booking
     )
 
-    # 3️⃣ Save slot
     save_booked_slot(
         salon_id=salon_id,
         booking=booking,
@@ -381,11 +375,14 @@ def save_booked_slot(salon_id: str, booking: dict, appointment_id: str):
 
 
 # =====================================================
-# 📞 GET OWNER PHONE BY OWNER UID
-# salonandspa/admin/{ownerUid}/phone
+# 📞 GET OWNER PHONE
 # =====================================================
 def get_owner_phone(owner_uid: str):
     try:
+        if not owner_uid:
+            print("⚠️ ownerUid is empty")
+            return None
+
         ref = db.reference(f"salonandspa/admin/{owner_uid}")
         data = ref.get() or {}
 
@@ -396,3 +393,155 @@ def get_owner_phone(owner_uid: str):
     except Exception as e:
         print("❌ Error fetching owner phone:", e)
         return None
+
+
+# =====================================================
+# ❌ CANCEL APPOINTMENT + CLEANUP
+# =====================================================
+def cancel_appointment_and_cleanup(salon_id: str, appointment_id: str, date: str):
+    try:
+        appt_ref = db.reference(f"salonandspa/appointments/salon/{salon_id}/{appointment_id}")
+        appt_data = appt_ref.get()
+
+        if not appt_data:
+            print("⚠️ Appointment not found:", appointment_id)
+            return
+
+        customer_id = appt_data.get("customerId")
+
+        # Update appointment status
+        appt_ref.update({
+            "status": "cancelled_by_customer",
+            "cancelledAt": int(time.time() * 1000)
+        })
+        print("❌ Appointment status updated:", appointment_id)
+
+        # Delete slot
+        slots_ref = db.reference(f"salonandspa/salons/{salon_id}/slots/{date}")
+        slots = slots_ref.get() or {}
+
+        for slot_id, slot in slots.items():
+            if slot.get("appointmentId") == appointment_id:
+                slots_ref.child(slot_id).delete()
+                print("🧩 Slot deleted:", slot_id)
+                break
+
+        # Delete customer booking + auto delete customer if empty
+        if customer_id:
+            bookings_ref = db.reference(f"salonandspa/customer/{customer_id}/bookings")
+            bookings_ref.child(appointment_id).delete()
+            print("👤 Customer booking deleted:", appointment_id)
+
+            remaining = bookings_ref.get()
+
+            if not remaining:
+                cust_root_ref = db.reference(f"salonandspa/customer/{customer_id}")
+                cust_root_ref.delete()
+                print("🗑️ Customer profile deleted (no bookings left):", customer_id)
+            else:
+                print("ℹ️ Customer still has other bookings, profile kept:", customer_id)
+        else:
+            print("⚠️ customerId missing in appointment")
+
+    except Exception as e:
+        print("❌ Error during cancel cleanup:", e)
+
+
+# =====================================================
+# 🔎 FIND LATEST ACTIVE BOOKING BY CUSTOMER
+# =====================================================
+def find_latest_active_booking_by_customer(phone: str, name: str):
+    try:
+        ref = db.reference("salonandspa/appointments/salon")
+        all_salons = ref.get() or {}
+
+        latest_booking = None
+        latest_time = 0
+
+        for salon_id, salon_bookings in all_salons.items():
+            for appointment_id, booking in (salon_bookings or {}).items():
+
+                if booking.get("status") != "confirmed":
+                    continue
+
+                customer = booking.get("customer", {})
+                customer_phone = customer.get("phone", "")
+                customer_name = customer.get("name", "")
+
+                if customer_phone == phone and customer_name.lower() == name.lower():
+
+                    created_at = booking.get("createdAt", 0)
+
+                    if created_at > latest_time:
+                        latest_time = created_at
+
+                        latest_booking = {
+                            "appointmentId": appointment_id,
+                            "salonId": salon_id,
+                            "ownerUid": booking.get("ownerUid"),
+                            "employeeId": booking.get("employeeId"),
+
+                            "customerName": customer_name,
+                            "customerPhone": customer_phone,
+
+                            "salonName": booking.get("salonName"),
+                            "serviceName": booking["services"][0]["serviceName"],
+
+                            "date": booking.get("date"),
+                            "startTime": booking.get("startTime"),
+
+                            "employeePhone": None
+                        }
+
+                        emp_ref = db.reference(
+                            f"salonandspa/salons/{salon_id}/employees/{booking.get('employeeId')}"
+                        )
+                        emp_data = emp_ref.get() or {}
+                        latest_booking["employeePhone"] = emp_data.get("phone")
+
+        return latest_booking
+
+    except Exception as e:
+        print("❌ Error finding booking for cancel:", e)
+        return None
+
+# =====================================================
+# 🔎 FIND OWNER UID BY SALON ID
+# =====================================================
+def find_owner_uid_by_salon(salon_id: str):
+    try:
+        ref = db.reference("salonandspa/admin")
+        admins = ref.get() or {}
+
+        for admin_uid, admin in admins.items():
+            for key, value in admin.items():
+                if key.startswith("salonid") and value == salon_id:
+                    print("👑 Found ownerUid for salon:", admin_uid)
+                    return admin_uid
+
+        print("⚠️ No owner found for salon:", salon_id)
+        return None
+
+    except Exception as e:
+        print("❌ Error finding owner by salon:", e)
+        return None
+# =====================================================
+# 👨‍💼 GET EMPLOYEE BY ID (GLOBAL EMPLOYEES NODE)
+# =====================================================
+def get_employee_by_id(employee_id: str):
+    try:
+        ref = db.reference(f"salonandspa/employees/{employee_id}")
+        data = ref.get()
+
+        if not data:
+            print("⚠️ Employee not found in GLOBAL employees node:", employee_id)
+            return None
+
+        print("👨‍💼 Employee fetched from GLOBAL node:", data)
+        return data
+
+    except Exception as e:
+        print("❌ Error fetching employee by id:", e)
+        return None
+
+
