@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Nexsalon WhatsApp</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="phone">
+    <div class="chat-container">
+
+        <!-- Header -->
+        <div class="chat-header">
+            <div class="profile">
+                <div class="dp"></div>
+                <div>
+                    <div class="name">Nexsalon Assistant</div>
+                    <div class="status">online</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat Messages -->
+        <div id="chat-box" class="chat-box"></div>
+
+        <!-- Input -->
+        <div class="chat-input">
+            <input type="text" id="message" placeholder="Message" />
+            <button id="sendBtn">➤</button>
+        </div>
+
+    </div>
+</div>
+
+<script>
+    const userId = "test_user_123";
+
+    const chatBox = document.getElementById("chat-box");
+    const input = document.getElementById("message");
+    const sendBtn = document.getElementById("sendBtn");
+
+    function appendMessage(text, type) {
+        const messageWrapper = document.createElement("div");
+        messageWrapper.classList.add("message", type);
+
+        const bubble = document.createElement("div");
+        bubble.classList.add("bubble");
+        bubble.innerHTML = text.replace(/\n/g, "<br>");
+
+        messageWrapper.appendChild(bubble);
+        chatBox.appendChild(messageWrapper);
+
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    function sendMessage() {
+        const message = input.value.trim();
+        if (!message) return;
+
+        appendMessage(message, "user");
+        input.value = "";
+
+        fetch("/chat", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                user_id: userId,
+                message: message
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+            appendMessage(data.reply, "bot");
+        })
+        .catch(error => {
+            appendMessage("Server error ❌", "bot");
+        });
+    }
+
+    sendBtn.addEventListener("click", sendMessage);
+
+    input.addEventListener("keypress", function(e) {
+        if (e.key === "Enter") {
+            sendMessage();
+        }
+    });
+
+    window.onload = function() {
+        appendMessage("Hi 👋 Welcome to NexSalon", "bot");
+    };
+</script>
+
+</body>
+</html>

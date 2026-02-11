@@ -82,7 +82,7 @@ def handle_conversation(user_id: str, message: str):
         session["state"] = "ROLE_SELECTION"
         SESSIONS[user_id] = session
         return (
-            "Welcome to Glowbizz 👋\n\n"
+            "Welcome to NexSalon 👋\n\n"
             "Who are you?\n"
             "1️⃣ Salon Owner – Manage my salon\n"
             "2️⃣ Customer – Book an appointment\n\n"
@@ -99,7 +99,7 @@ def handle_conversation(user_id: str, message: str):
             SESSIONS[user_id] = session
             return (
                 "Welcome, Salon Owner 👋\n"
-                "Are you already using Glowbizz?\n"
+                "Are you already using NexSalon?\n"
                 "1️⃣ Yes, Login\n"
                 "2️⃣ No, I want to register"
             )
@@ -144,7 +144,7 @@ def handle_conversation(user_id: str, message: str):
         SESSIONS[user_id] = session
         return (
             "🎉 Registration almost complete!\n\n"
-            "✨ Glowbizz Plans ✨\n\n"
+            "✨ NexSalon Plans ✨\n\n"
             "1️⃣ Starter – ₹1,999 / month\n"
             "2️⃣ Professional – ₹9,999 / 6 months\n"
             "3️⃣ Premium – ₹19,999 / yearly\n\n"
@@ -174,7 +174,7 @@ def handle_conversation(user_id: str, message: str):
             return (
                 f"✅ You selected: {data['plan']}\n\n"
                 "Our team will contact you shortly for onboarding.\n"
-                "Thank you for registering with Glowbizz 💼"
+                "Thank you for registering with NexSalon 💼"
             )
         else:
             return "Please reply with 1, 2, or 3."
@@ -199,7 +199,7 @@ def handle_conversation(user_id: str, message: str):
 
         response = "Here are salons near you:\n\n"
         for idx, salon in enumerate(salons, start=1):
-            response += f"{idx}️⃣ {salon['name']} - {salon['address']}\n"
+            response += f"{idx}️.{salon['name']} - {salon['address']}\n"
 
         response += "\nReply with the number to select a salon."
         return response
@@ -222,7 +222,8 @@ def handle_conversation(user_id: str, message: str):
 
             response = f"Services at {salon['name']}:\n\n"
             for idx, s in enumerate(services, start=1):
-                response += f"{idx}️⃣ {s['serviceName']} – ₹{s['price']} ({s['duration']} min)\n"
+             response += f"{idx}. {s['serviceName']} – ₹{s['price']} ({s['duration']} min)\n"
+
 
             response += "\nReply with the number to select a service."
             return response
@@ -291,7 +292,7 @@ def handle_conversation(user_id: str, message: str):
 
         response = f"Available time slots on {msg}:\n\n"
         for idx, t in enumerate(free_slots, start=1):
-            response += f"{idx}️⃣ {t}\n"
+            response += f"{idx}️. {t}\n"
 
         response += "\nReply with the number to select time."
         return response
@@ -472,7 +473,7 @@ def handle_conversation(user_id: str, message: str):
             print("⚠️ Could not fetch employee from Firebase, skipping WhatsApp")
 
         SESSIONS.pop(user_id, None)
-        return "🎉 Your appointment is confirmed! Thank you for booking with Glowbizz ✨"
+        return "🎉 Your appointment is confirmed! Thank you for booking with NexSaloon ✨"
 
     else:
         SESSIONS.pop(user_id, None)
