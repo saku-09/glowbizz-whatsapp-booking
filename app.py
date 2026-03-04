@@ -3,7 +3,6 @@ from services.conversation_service import handle_conversation
 from services.whatsapp_service import send_whatsapp_message
 import os
 from dotenv import load_dotenv
-
 load_dotenv()
 
 app = Flask(__name__)
