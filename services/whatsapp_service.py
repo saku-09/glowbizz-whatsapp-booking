@@ -1,60 +1,86 @@
-# services/whatsapp_service.py
+import os
+import requests
+from dotenv import load_dotenv
 
-import time
+load_dotenv()
 
-try:
-    import pywhatkit
-    PYWHATKIT_AVAILABLE = True
-    print("✅ pywhatkit loaded successfully")
-except Exception as e:
-    print("⚠️ pywhatkit not available, WhatsApp disabled:", e)
-    PYWHATKIT_AVAILABLE = False
+WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
+PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
+
+if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
+    raise ValueError("Missing required environment variables: WHATSAPP_TOKEN and PHONE_NUMBER_ID")
 
 
-def format_phone(phone):
+def format_phone_number(phone: str) -> str:
     """
-    Accepts int or str.
-    Converts:
-      9619901999  -> 919619901999
-      "9619901999" -> 919619901999
-      "919619901999" -> 919619901999
+    Format phone number for WhatsApp API.
+    Removes spaces, dashes, and ensures it has country code.
+    Example: '+91 98765 43210' -> '919876543210'
     """
-
-    # 🔥 ALWAYS convert to string first
-    phone = str(phone).strip()
-
-    # Remove any spaces or +
-    phone = phone.replace(" ", "").replace("+", "")
-
-    # Add country code if missing
-    if not phone.startswith("91"):
-        phone = "91" + phone
-
-    return phone
+    # Remove spaces, dashes, parentheses
+    cleaned = phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+    
+    # Remove leading + if present
+    if cleaned.startswith("+"):
+        cleaned = cleaned[1:]
+    
+    return cleaned
 
 
-def send_whatsapp_message(phone, message):
-    # If pywhatkit not usable, don't crash the app
-    if not PYWHATKIT_AVAILABLE:
-        print("⚠️ WhatsApp sending skipped (pywhatkit not available)")
-        print("📨 Message was:\n", message)
-        return
+def send_whatsapp_message(to_number, message):
+    if not to_number or not message:
+        return {
+            "success": False,
+            "error": "Missing phone number or message"
+        }
+    
+    # Format phone number
+    formatted_number = format_phone_number(to_number)
+    
+    print(f"📱 Sending WhatsApp to: {formatted_number}")
+    print(f"💬 Message: {message}")
+
+    url = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
+
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
+    data = {
+        "messaging_product": "whatsapp",
+        "to": formatted_number,
+        "type": "text",
+        "text": {
+            "body": message
+        }
+    }
 
     try:
-        # 🔥 Safe formatting
-        phone = format_phone(phone)
-
-        print("📤 Sending WhatsApp to:", phone)
-
-        pywhatkit.sendwhatmsg_instantly(
-            phone_no=f"+{phone}",
-            message=message,
-            wait_time=10,
-            tab_close=True
-        )
-
-        time.sleep(5)
-        print(f"WhatsApp sent successfully to +{phone}")
-
+        response = requests.post(url, headers=headers, json=data, timeout=10)
+        response_data = response.json()
+        
+        print(f"✅ WhatsApp API Response: {response_data}")
+        
+        # Check if the request was successful
+        if response.status_code == 200:
+            return {
+                "success": True,
+                "message_id": response_data.get("messages", [{}])[0].get("id"),
+                "response": response_data
+            }
+        else:
+            error_msg = response_data.get("error", {}).get("message", "Unknown error")
+            print(f"❌ WhatsApp Error: {error_msg}")
+            return {
+                "success": False,
+                "error": error_msg,
+                "response": response_data
+            }
+    
+    except requests.exceptions.Timeout:
+        return {"success": False, "error": "Request timeout"}
+    except requests.exceptions.RequestException as e:
+        return {"success": False, "error": str(e)}
     except Exception as e:
-        print("❌ WhatsApp Error:", e)
+        return {"success": False, "error": str(e)}
