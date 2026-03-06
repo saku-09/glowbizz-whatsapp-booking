@@ -100,6 +100,7 @@ def webhook():
     if request.method == "POST":
 
         data = request.get_json()
+        print("Webhook Data:", data)
 
         print("\n" + "="*60)
         print("🔥 FULL WEBHOOK PAYLOAD:")
