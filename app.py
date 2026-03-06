@@ -65,8 +65,11 @@ def chat():
 # WHATSAPP WEBHOOK
 # ============================================
 
-@app.route("/webhook", methods=["GET", "POST"])
+@app.route("/webhook", methods=["GET", "POST" , "HEAD"])
 def webhook():
+    # Handle HEAD request (Render health check)
+    if request.method == "HEAD":
+     return "", 200
 
     # ----------------------------------------
     # WEBHOOK VERIFICATION (META)
