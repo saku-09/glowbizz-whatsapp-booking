@@ -344,28 +344,26 @@ def get_salons_by_city(city):
 
     results = []
 
-    city = city.strip().lower()
+    city = city.lower().strip()
 
     for salon_id, salon in salons.items():
 
         address = str(salon.get("address", "")).lower()
         branch = str(salon.get("branch", "")).lower()
-        name = salon.get("name") or salon.get("salonName") or branch
+        salon_city = str(salon.get("city", "")).lower()
 
-        if city in address or city in branch:
+        if city in address or city in branch or city == salon_city:
 
             results.append({
                 "id": salon_id,
-                "name": name,
-                "address": salon.get("address") or salon.get("branch"),
+                "name": salon.get("name"),
+                "address": salon.get("address"),
                 "ownerUid": salon.get("ownerUid")
             })
 
-    print("CITY SEARCH:", city)
     print("SALONS FOUND:", results)
 
     return results
-
 
 # =====================================================
 # 💆 GET SERVICES BY SALON
