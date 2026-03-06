@@ -1,13 +1,16 @@
 # services/notification_service.py
 
+from services.firebase_service import get_owner_phone
+from services.whatsapp_service import send_whatsapp_message
+
+
 # =====================================================
 # 🔔 BUILD CONFIRMATION MESSAGE
 # =====================================================
 
 def build_appointment_message(booking: dict):
     """
-    Builds WhatsApp notification message for NEW APPOINTMENT confirmation
-    Sent to owner & employee
+    Build message for new appointment
     """
 
     customer = booking.get("customer", {})
@@ -15,8 +18,8 @@ def build_appointment_message(booking: dict):
 
     customer_name = customer.get("name", "N/A")
     phone = customer.get("phone", "N/A")
-    email = customer.get("email", "N/A")
     age = customer.get("age", "N/A")
+    gender = customer.get("gender", "N/A")
 
     salon_name = booking.get("salonName", "N/A")
     branch = booking.get("branch", "N/A")
@@ -31,7 +34,7 @@ def build_appointment_message(booking: dict):
         "📢 *New Appointment Confirmed*\n\n"
         f"👤 Customer: {customer_name}\n"
         f"📞 Phone: {phone}\n"
-        f"📧 Email: {email}\n"
+        f"⚧ Gender: {gender}\n"
         f"🎂 Age: {age}\n\n"
         f"🏬 Salon: {salon_name}\n"
         f"📍 Branch: {branch}\n"
@@ -40,21 +43,17 @@ def build_appointment_message(booking: dict):
         f"📅 Date: {date}\n"
         f"⏰ Time: {slot_time}\n\n"
         "Please prepare for the appointment.\n"
-        "— Glowbizz System"
+        "— NexSalon System"
     )
 
     return message
 
 
 # =====================================================
-# ❌ BUILD CANCELLATION MESSAGE
+# ❌ BUILD CANCEL MESSAGE
 # =====================================================
 
 def build_cancel_message(cancel_data: dict):
-    """
-    Builds WhatsApp notification message for APPOINTMENT CANCELLATION
-    Sent to owner & employee
-    """
 
     customer_name = cancel_data.get("customerName", "N/A")
     phone = cancel_data.get("customerPhone", "N/A")
@@ -74,7 +73,54 @@ def build_cancel_message(cancel_data: dict):
         f"📅 Date: {date}\n"
         f"⏰ Time: {slot_time}\n\n"
         "This appointment has been cancelled by the customer.\n"
-        "— Glowbizz System"
+        "— NexSalon System"
     )
 
     return message
+
+
+# =====================================================
+# 📲 SEND OWNER NOTIFICATION
+# =====================================================
+
+def notify_owner_new_booking(booking: dict):
+    """
+    Send booking notification to salon owner
+    """
+
+    owner_uid = booking.get("ownerUid")
+
+    if not owner_uid:
+        print("⚠️ ownerUid missing in booking")
+        return
+
+    owner_phone = get_owner_phone(owner_uid)
+
+    if not owner_phone:
+        print("⚠️ Owner phone not found")
+        return
+
+    message = build_appointment_message(booking)
+
+    send_whatsapp_message(owner_phone, message)
+
+    print("📲 Owner notified about new booking")
+
+
+# =====================================================
+# 📲 SEND OWNER CANCEL NOTIFICATION
+# =====================================================
+
+def notify_owner_cancel(cancel_data: dict, owner_uid: str):
+
+    owner_phone = get_owner_phone(owner_uid)
+
+    if not owner_phone:
+        print("⚠️ Owner phone not found")
+        return
+
+    message = build_cancel_message(cancel_data)
+
+    send_whatsapp_message(owner_phone, message)
+
+    print("📲 Owner notified about cancellation")
