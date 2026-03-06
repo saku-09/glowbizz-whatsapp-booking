@@ -77,7 +77,9 @@ def handle_conversation(user_id, message):
     state = session["state"]
     data = session["data"]
 
-    msg = message.strip().upper()
+    msg = message.strip()
+    msg_upper = msg.upper()
+    msg_lower = msg.lower()
     print("MESSAGE RECEIVED:", msg)
 
     print("DEBUG:", user_id, state, msg)
@@ -110,14 +112,14 @@ def handle_conversation(user_id, message):
 
     if state == "MAIN_MENU":
 
-        if msg in ["BOOK", "BOOK APPOINTMENT"]:
+        if msg_upper in ["BOOK", "BOOK APPOINTMENT"]:
 
             session["state"] = "CITY"
             SESSIONS[user_id] = session
 
             return "📍 Please enter your City"
 
-        elif msg in ["CANCEL", "CANCEL APPOINTMENT"]:
+        elif msg_upper in ["CANCEL", "CANCEL APPOINTMENT"]:
 
             session["state"] = "CANCEL_PHONE"
             SESSIONS[user_id] = session
@@ -134,9 +136,12 @@ def handle_conversation(user_id, message):
 
     if state == "CITY":
 
-        data["city"] = msg.lower()
+        data["city"] = msg
 
-        salons = find_salons_by_city(data["city"])
+        salons = find_salons_by_city(msg_lower)
+        
+        print("CITY ENTERED:", msg_lower)
+        print("SALONS FROM FIREBASE:", salons)
 
         if not salons:
             return "❌ No salons found in this city."
@@ -174,7 +179,7 @@ def handle_conversation(user_id, message):
         salon = None
 
         for s in data["salons"]:
-            if str(s["id"]) == msg:
+            if str(s["id"]).upper() == msg_upper:
                 salon = s
                 break
 

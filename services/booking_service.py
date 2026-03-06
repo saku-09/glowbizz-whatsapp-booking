@@ -6,17 +6,11 @@ from services.firebase_service import (
     get_employees_by_salon
 )
 
-
 # =====================================================
 # 🏬 FIND SALONS BY CITY
 # =====================================================
 
 def find_salons_by_city(city: str):
-    """
-    Fetch salons filtered by city.
-
-    Used in conversation.py when user enters city.
-    """
 
     if not city:
         return []
@@ -34,11 +28,6 @@ def find_salons_by_city(city: str):
 # =====================================================
 
 def find_services_by_salon(salon_id: str):
-    """
-    Fetch all services for a specific salon.
-
-    Used after user selects a salon.
-    """
 
     if not salon_id:
         return []
@@ -56,11 +45,6 @@ def find_services_by_salon(salon_id: str):
 # =====================================================
 
 def find_employees_by_salon(salon_id: str):
-    """
-    Fetch all active employees of a salon.
-
-    Used during booking confirmation to assign employee.
-    """
 
     if not salon_id:
         return []

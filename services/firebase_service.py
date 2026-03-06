@@ -336,28 +336,33 @@ def find_owner_uid_by_salon(salon_id):
 # 🏬 GET SALONS BY CITY
 # =====================================================
 
-def get_salons_by_city(city: str):
-
+def get_salons_by_city(city):
+    
     ref = db.reference("salonandspa/salons")
 
     salons = ref.get() or {}
 
     results = []
 
+    city = city.strip().lower()
+
     for salon_id, salon in salons.items():
 
-        address = salon.get("address", "")
-        branch = salon.get("branch", "")
+        address = str(salon.get("address", "")).lower()
+        branch = str(salon.get("branch", "")).lower()
         name = salon.get("name") or salon.get("salonName") or branch
 
-        if city.lower() in address.lower() or city.lower() in branch.lower():
+        if city in address or city in branch:
 
             results.append({
                 "id": salon_id,
                 "name": name,
-                "address": address or branch,
+                "address": salon.get("address") or salon.get("branch"),
                 "ownerUid": salon.get("ownerUid")
             })
+
+    print("CITY SEARCH:", city)
+    print("SALONS FOUND:", results)
 
     return results
 
