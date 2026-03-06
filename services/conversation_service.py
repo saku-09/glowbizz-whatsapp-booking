@@ -77,7 +77,8 @@ def handle_conversation(user_id, message):
     state = session["state"]
     data = session["data"]
 
-    msg = message.strip()
+    msg = message.strip().upper()
+    print("MESSAGE RECEIVED:", msg)
 
     print("DEBUG:", user_id, state, msg)
 
@@ -109,14 +110,14 @@ def handle_conversation(user_id, message):
 
     if state == "MAIN_MENU":
 
-        if msg == "BOOK":
+        if msg in ["BOOK", "BOOK APPOINTMENT"]:
 
             session["state"] = "CITY"
             SESSIONS[user_id] = session
 
             return "📍 Please enter your City"
 
-        elif msg == "CANCEL":
+        elif msg in ["CANCEL", "CANCEL APPOINTMENT"]:
 
             session["state"] = "CANCEL_PHONE"
             SESSIONS[user_id] = session
@@ -173,7 +174,7 @@ def handle_conversation(user_id, message):
         salon = None
 
         for s in data["salons"]:
-            if s["id"] == msg:
+            if str(s["id"]) == msg:
                 salon = s
                 break
 
@@ -217,7 +218,7 @@ def handle_conversation(user_id, message):
         service = None
 
         for s in data["services"]:
-            if s["serviceId"] == msg:
+            if str(s["serviceId"]) == msg:
                 service = s
                 break
 
@@ -418,7 +419,7 @@ def handle_conversation(user_id, message):
 
     if state == "CONFIRM":
 
-        if msg == "CONFIRM":
+        if msg in ["CONFIRM", "CONFIRM BOOKING"]:
 
             salon = data["salon"]
             service = data["service"]

@@ -7,6 +7,9 @@ load_dotenv()
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 
+if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
+    raise Exception("Missing WHATSAPP_TOKEN or PHONE_NUMBER_ID in environment variables")
+
 GRAPH_URL = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
 
 
@@ -23,14 +26,27 @@ def send_whatsapp_message(to, message):
 
     payload = {
         "messaging_product": "whatsapp",
-        "to": to,
+        "to": str(to),
         "type": "text",
         "text": {
             "body": message
         }
     }
 
-    requests.post(GRAPH_URL, headers=headers, json=payload)
+    try:
+
+        response = requests.post(GRAPH_URL, headers=headers, json=payload)
+
+        print("📤 Sending text message")
+        print("Status:", response.status_code)
+        print("Response:", response.text)
+
+        return response.json()
+
+    except Exception as e:
+
+        print("❌ WhatsApp Text Send Error:", str(e))
+        return None
 
 
 # =====================================================
@@ -47,17 +63,18 @@ def send_whatsapp_buttons(to, body_text, buttons):
     button_list = []
 
     for btn in buttons:
+
         button_list.append({
             "type": "reply",
             "reply": {
-                "id": btn["id"],
+                "id": str(btn["id"]),
                 "title": btn["title"]
             }
         })
 
     payload = {
         "messaging_product": "whatsapp",
-        "to": to,
+        "to": str(to),
         "type": "interactive",
         "interactive": {
             "type": "button",
@@ -70,7 +87,20 @@ def send_whatsapp_buttons(to, body_text, buttons):
         }
     }
 
-    requests.post(GRAPH_URL, headers=headers, json=payload)
+    try:
+
+        response = requests.post(GRAPH_URL, headers=headers, json=payload)
+
+        print("📤 Sending button message")
+        print("Status:", response.status_code)
+        print("Response:", response.text)
+
+        return response.json()
+
+    except Exception as e:
+
+        print("❌ WhatsApp Button Send Error:", str(e))
+        return None
 
 
 # =====================================================
@@ -86,7 +116,7 @@ def send_whatsapp_list(to, body_text, rows):
 
     payload = {
         "messaging_product": "whatsapp",
-        "to": to,
+        "to": str(to),
         "type": "interactive",
         "interactive": {
             "type": "list",
@@ -105,4 +135,17 @@ def send_whatsapp_list(to, body_text, rows):
         }
     }
 
-    requests.post(GRAPH_URL, headers=headers, json=payload)
+    try:
+
+        response = requests.post(GRAPH_URL, headers=headers, json=payload)
+
+        print("📤 Sending list message")
+        print("Status:", response.status_code)
+        print("Response:", response.text)
+
+        return response.json()
+
+    except Exception as e:
+
+        print("❌ WhatsApp List Send Error:", str(e))
+        return None

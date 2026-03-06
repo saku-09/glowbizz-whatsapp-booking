@@ -65,11 +65,16 @@ def chat():
 # WHATSAPP WEBHOOK
 # ============================================
 
-@app.route("/webhook", methods=["GET", "POST" , "HEAD"])
+@app.route("/webhook", methods=["GET", "POST", "HEAD"])
 def webhook():
-    # Handle HEAD request (Render health check)
+
+    # ----------------------------------------
+    # HANDLE HEAD REQUEST (Render health check)
+    # ----------------------------------------
+
     if request.method == "HEAD":
-     return "", 200
+        return "", 200
+
 
     # ----------------------------------------
     # WEBHOOK VERIFICATION (META)
@@ -100,7 +105,6 @@ def webhook():
     if request.method == "POST":
 
         data = request.get_json()
-        print("Webhook Data:", data)
 
         print("\n" + "="*60)
         print("🔥 FULL WEBHOOK PAYLOAD:")
@@ -120,6 +124,7 @@ def webhook():
             change = entry["changes"][0]
             value = change.get("value", {})
 
+
             # --------------------------------
             # HANDLE INCOMING MESSAGE
             # --------------------------------
@@ -132,31 +137,61 @@ def webhook():
 
                 message_type = msg_obj.get("type")
 
+                message = None
+
+
+                # ----------------------------
+                # TEXT MESSAGE
+                # ----------------------------
+
                 if message_type == "text":
+                    message = msg_obj["text"]["body"].strip()
 
-                    message = msg_obj["text"]["body"]
 
-                    print(f"📩 Incoming message: {message}")
-                    print(f"📞 From: {phone}")
+                # ----------------------------
+                # BUTTON / LIST RESPONSE
+                # ----------------------------
 
-                    # ----------------------------
-                    # PROCESS CONVERSATION
-                    # ----------------------------
+                elif message_type == "interactive":
 
-                    reply = handle_conversation(phone, message)
+                    interactive = msg_obj.get("interactive", {})
 
-                    print(f"🤖 Bot Reply: {reply}")
+                    if interactive.get("type") == "button_reply":
+                        message = interactive["button_reply"]["id"]
 
-                    # ----------------------------
-                    # SEND WHATSAPP MESSAGE
-                    # ----------------------------
+                    elif interactive.get("type") == "list_reply":
+                        message = interactive["list_reply"]["id"]
 
-                    if reply and reply.strip() != "":
-                        print("📤 Sending WhatsApp reply...")
-                        send_whatsapp_message(phone, reply)
 
-                else:
-                    print(f"ℹ️ Unsupported message type: {message_type}")
+                # ----------------------------
+                # UNKNOWN MESSAGE
+                # ----------------------------
+
+                if not message:
+                    print("⚠️ Unsupported message type:", message_type)
+                    return "EVENT_RECEIVED", 200
+
+
+                print(f"📩 Incoming message: {message}")
+                print(f"📞 From: {phone}")
+
+
+                # ----------------------------
+                # PROCESS CONVERSATION
+                # ----------------------------
+
+                reply = handle_conversation(phone, message)
+
+                print(f"🤖 Bot Reply: {reply}")
+
+
+                # ----------------------------
+                # SEND WHATSAPP MESSAGE
+                # ----------------------------
+
+                if reply and reply.strip() != "":
+                    print("📤 Sending WhatsApp reply...")
+                    send_whatsapp_message(phone, reply)
 
 
             # --------------------------------
@@ -167,9 +202,11 @@ def webhook():
 
                 print("ℹ️ Status update received")
 
+
         except Exception as e:
 
             print("❌ Webhook error:", str(e))
+
 
         return "EVENT_RECEIVED", 200
 
