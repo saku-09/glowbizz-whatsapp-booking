@@ -336,7 +336,9 @@ def find_latest_active_booking_by_customer(
                             "date": booking.get("date"),
                             "startTime": booking.get("startTime"),
                             "salonName": booking.get("salonName"),
-                            "serviceName": booking["services"][0]["serviceName"],
+                            "serviceName": booking.get("services", [{}])[0].get("serviceName", "Service"),
+                            "customerName": customer.get("name"),
+                            "customerPhone": customer.get("phone"),
                             "collection": col
                         }
 
@@ -362,6 +364,21 @@ def find_owner_uid_by_salon(salon_id):
                 return uid
 
     return None
+
+
+# ============================================
+# GET OWNER PHONE
+# ============================================
+
+def get_owner_phone(owner_uid):
+
+    if not owner_uid:
+        return None
+
+    ref = db.reference(f"salonandspa/admin/{owner_uid}")
+    data = ref.get() or {}
+
+    return data.get("phone")
 
 
 # ============================================
@@ -448,6 +465,8 @@ def get_services_by_salon(salon_id, collection="salons"):
     try:
         ref = db.reference(f"salonandspa/{collection}/{salon_id}/services")
         services_data = ref.get() or {}
+        print("🔍 SERVICE FETCH PATH:", f"salonandspa/{collection}/{salon_id}/services")
+        print("🔍 SERVICES RAW DATA:", services_data)
 
         results = []
 
@@ -467,7 +486,7 @@ def get_services_by_salon(salon_id, collection="salons"):
 
             results.append({
                 "serviceId": sid,
-                "serviceName": s.get("name") or s.get("serviceName") or "Service",
+                "serviceName": str(s.get("name") or s.get("serviceName") or "Service"),
                 "price": int(s.get("price", 0)),
                 "duration": int(s.get("duration", 30))
             })

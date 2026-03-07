@@ -22,6 +22,11 @@ from services.whatsapp_service import (
     send_whatsapp_message
 )
 
+from services.notification_service import (
+    notify_owner_new_booking,
+    notify_owner_cancel
+)
+
 # ==================================================
 # SLOT GENERATOR
 # ==================================================
@@ -81,9 +86,82 @@ def auto_assign_employee(employees, time_slot):
         return None
 
     # simple load balancing using time slot hash
-    index = hash(time_slot) % len(employees)
+    index = abs(hash(time_slot)) % len(employees)
 
     return employees[index]
+
+
+# ==================================================
+# SALON PAGE SENDER (helper)
+# ==================================================
+
+def _send_salon_page(user_id, all_salons, page):
+    """Send one page of salons (9 per page) with a 'See More' row if needed."""
+
+    PAGE_SIZE = 9
+    start = page * PAGE_SIZE
+    page_salons = all_salons[start: start + PAGE_SIZE]
+
+    rows = []
+
+    for salon in page_salons:
+        title = (salon.get("name") or salon.get("salonName") or "Salon")[:24]
+        row = {"id": str(salon.get("id")), "title": title}
+        description = (salon.get("address") or "")[:72]
+        if description:
+            row["description"] = description
+        rows.append(row)
+
+    # Add 'See More' if there are more salons beyond this page
+    if start + PAGE_SIZE < len(all_salons):
+        rows.append({
+            "id": "MORE_SALONS",
+            "title": "➡️ See More",
+            "description": f"Showing {start+1}–{start+len(page_salons)} of {len(all_salons)}"
+        })
+
+    total_pages = (len(all_salons) + PAGE_SIZE - 1) // PAGE_SIZE
+    header = f"💇 Select a Salon or Spa (Page {page+1}/{total_pages})"
+
+    return send_whatsapp_list(user_id, header, rows)
+
+
+def _send_service_page(user_id, all_services, page):
+    """Send one page of services (9 per page) with a 'See More' row if needed."""
+
+    PAGE_SIZE = 9
+    start = page * PAGE_SIZE
+    page_items = all_services[start: start + PAGE_SIZE]
+
+    rows = []
+
+    for s in page_items:
+
+        title = (s.get("serviceName") or "Service")[:24]
+
+        price = s.get("price", 0)
+        duration = s.get("duration", 30)
+
+        desc = f"₹{price} | {duration} min"
+
+        rows.append({
+            "id": str(s.get("serviceId")),
+            "title": title,
+            "description": desc
+        })
+
+    # Add 'See More' if there are more services beyond this page
+    if start + PAGE_SIZE < len(all_services):
+        rows.append({
+            "id": "MORE_SERVICES",
+            "title": "➡️ See More Services",
+            "description": f"Showing {start+1}–{start+len(page_items)} of {len(all_services)}"
+        })
+
+    total_pages = (len(all_services) + PAGE_SIZE - 1) // PAGE_SIZE
+    header = f"💆 Select Service (Page {page+1}/{total_pages})"
+
+    return send_whatsapp_list(user_id, header, rows)
 
 
 # ==================================================
@@ -205,71 +283,6 @@ def handle_conversation(user_id, message):
         return ""
 
 
-# ==================================================
-# SALON PAGE SENDER (helper)
-# ==================================================
-
-def _send_salon_page(user_id, all_salons, page):
-    """Send one page of salons (9 per page) with a 'See More' row if needed."""
-
-    PAGE_SIZE = 9
-    start = page * PAGE_SIZE
-    page_salons = all_salons[start: start + PAGE_SIZE]
-
-    rows = []
-
-    for salon in page_salons:
-        title = (salon["name"] or "Salon")[:24]
-        row = {"id": str(salon["id"]), "title": title}
-        description = (salon["address"] or "")[:72]
-        if description:
-            row["description"] = description
-        rows.append(row)
-
-    # Add 'See More' if there are more salons beyond this page
-    if start + PAGE_SIZE < len(all_salons):
-        rows.append({
-            "id": "MORE_SALONS",
-            "title": "➡️ See More",
-            "description": f"Showing {start+1}–{start+len(page_salons)} of {len(all_salons)}"
-        })
-
-    total_pages = (len(all_salons) + PAGE_SIZE - 1) // PAGE_SIZE
-    header = f"💇 Select a Salon or Spa (Page {page+1}/{total_pages})"
-
-    return send_whatsapp_list(user_id, header, rows)
-
-
-def _send_service_page(user_id, all_services, page):
-    """Send one page of services (9 per page) with a 'See More' row if needed."""
-
-    PAGE_SIZE = 9
-    start = page * PAGE_SIZE
-    page_items = all_services[start: start + PAGE_SIZE]
-
-    rows = []
-
-    for s in page_items:
-        title = (s["serviceName"] or "Service")[:24]
-        desc = f"₹{s['price']} | {s['duration']} min"
-        rows.append({
-            "id": str(s["serviceId"]),
-            "title": title,
-            "description": desc
-        })
-
-    # Add 'See More' if there are more services beyond this page
-    if start + PAGE_SIZE < len(all_services):
-        rows.append({
-            "id": "MORE_SERVICES",
-            "title": "➡️ See More Services",
-            "description": f"Showing {start+1}–{start+len(page_items)} of {len(all_services)}"
-        })
-
-    total_pages = (len(all_services) + PAGE_SIZE - 1) // PAGE_SIZE
-    header = f"💆 Select Service (Page {page+1}/{total_pages})"
-
-    return send_whatsapp_list(user_id, header, rows)
 
 
 # ==================================================
@@ -307,6 +320,8 @@ def _send_service_page(user_id, all_services, page):
 
         collection = f"{salon.get('type', 'salon')}s"  # "salons" or "spas"
         all_services = find_services_by_salon(salon["id"], collection=collection)
+
+        print("SERVICES FOUND:", all_services)
 
         if not all_services:
             return "❌ This salon has no active services available for booking right now."
@@ -392,10 +407,12 @@ def _send_service_page(user_id, all_services, page):
         if not timings or not timings.get("isOpen"):
             return "Salon is closed that day."
 
+        duration = int(service.get("duration", 30))
+
         slots = generate_slots_by_duration(
             timings["open"],
             timings["close"],
-            int(service["duration"])
+            duration
         )
 
         booked = get_booked_slots_from_salon_node(
@@ -405,7 +422,6 @@ def _send_service_page(user_id, all_services, page):
         )
 
         free_slots = []
-        new_duration = int(service["duration"])
 
         for slot_start in slots:
             
@@ -413,7 +429,7 @@ def _send_service_page(user_id, all_services, page):
             is_overlap = False
             
             s_dt = datetime.strptime(slot_start, "%H:%M")
-            s_end_dt = s_dt + timedelta(minutes=new_duration)
+            s_end_dt = s_dt + timedelta(minutes=duration)
 
             for b in booked:
                 b_start_dt = datetime.strptime(b["start"], "%H:%M")
@@ -595,7 +611,10 @@ def _send_service_page(user_id, all_services, page):
                 },
 
                 "placeId": salon["id"],
+                "salonName": salon.get("name") or salon.get("salonName"),
+                "branch": salon.get("branch") or salon.get("address"),
                 "employeeId": employee["employeeId"] if employee else "auto",
+                "employeeName": employee["name"] if employee else "Auto-Assign",
                 "services": [service],
                 "totalDuration": int(service.get("duration", 30)),
                 "date": data["date"],
@@ -608,6 +627,9 @@ def _send_service_page(user_id, all_services, page):
 
             if isinstance(result, dict) and result.get("success") == False:
                 return result["message"]
+
+            # 🔔 NOTIFY OWNER
+            notify_owner_new_booking(booking)
 
             SESSIONS.pop(user_id, None)
 
@@ -650,6 +672,10 @@ def _send_service_page(user_id, all_services, page):
             date=result["date"],
             collection=result.get("collection", "salons")
         )
+
+        # 🔔 NOTIFY OWNER
+        if result.get("ownerUid"):
+            notify_owner_cancel(result, result["ownerUid"])
 
         SESSIONS.pop(user_id, None)
 
