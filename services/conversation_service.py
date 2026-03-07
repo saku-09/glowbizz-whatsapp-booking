@@ -182,34 +182,44 @@ def handle_conversation(user_id, message):
         print("SALONS FROM FIREBASE:", salons)
 
         if not salons:
-            return "❌ No salons found in this city. Please try another city."
+            return "❌ No salons found in this city. Please try another city name."
+
+        # WhatsApp List API: max 10 rows allowed
+        salons = salons[:10]
 
         data["salons"] = salons
-
-        session["state"] = "SELECT_SALON"
-        SESSIONS[user_id] = session
 
         rows = []
 
         for salon in salons:
 
-            title = (salon["name"] or "Salon")[:24]          # WhatsApp title limit: 24 chars
-            description = (salon["address"] or "")[:72]      # WhatsApp description limit: 72 chars
+            title = (salon["name"] or "Salon")[:24]        # hard limit: 24 chars
+            description = (salon["address"] or "")[:72]    # hard limit: 72 chars
 
-            rows.append({
-                "id": salon["id"],
-                "title": title,
-                "description": description
-            })
+            row = {
+                "id": str(salon["id"]),
+                "title": title
+            }
+
+            # only add description if it has content — empty string causes API error
+            if description:
+                row["description"] = description
+
+            rows.append(row)
 
         result = send_whatsapp_list(
             user_id,
-            "💇 Select a Salon",
+            "💇 Select a Salon or Spa",
             rows
         )
 
         if not result:
-            return "⚠️ Could not display salon list. Please type your city again."
+            # list send failed — keep state at CITY so user can retry
+            return "⚠️ Could not show salon list. Please try again or type a different city."
+
+        # Only advance state after successful send
+        session["state"] = "SELECT_SALON"
+        SESSIONS[user_id] = session
 
         return ""
 

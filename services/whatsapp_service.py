@@ -143,9 +143,13 @@ def send_whatsapp_list(to, body_text, rows):
         print("Status:", response.status_code)
         print("Response:", response.text)
 
+        if response.status_code != 200:
+            print("❌ WhatsApp List API Error:", response.status_code, response.text)
+            return None
+
         return response.json()
 
     except Exception as e:
 
         print("❌ WhatsApp List Send Error:", str(e))
-        return None
+        return None
