@@ -71,8 +71,9 @@ def normalize_date(date):
 def get_salon_timings(salon_id, day, collection="salons"):
 
     ref = db.reference(f"salonandspa/{collection}/{salon_id}/timings/{day}")
-
+    print("TIMINGS PATH:", f"salonandspa/{collection}/{salon_id}/timings/{day}")
     data = ref.get()
+    print("TIMINGS DATA:", data)
 
     if not data:
         return None
