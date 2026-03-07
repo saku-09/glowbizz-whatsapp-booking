@@ -201,7 +201,8 @@ def save_whatsapp_booking(salon_id, booking_data, collection="salon"):
     
     with _booking_lock:
         # ── ATOMIC: check + save under one lock so two users can't grab the same slot ──
-
+        print("🔥 COLLECTION USED:", collection)
+        print("🔥 APPOINTMENT PATH:", f"salonandspa/appointments/{collection}/{salon_id}")
         if not is_slot_available(
             salon_id,
             booking_data["date"],
