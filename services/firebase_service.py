@@ -445,28 +445,37 @@ def get_salons_by_city(city):
 # ============================================
 
 def get_services_by_salon(salon_id, collection="salons"):
+    try:
+        ref = db.reference(f"salonandspa/{collection}/{salon_id}/services")
+        services_data = ref.get() or {}
 
-    ref = db.reference(
-        f"salonandspa/{collection}/{salon_id}/services"
-    )
+        results = []
 
-    services = ref.get() or {}
+        # Handle both dict {id: {data}} and list [{data}]
+        if isinstance(services_data, dict):
+            items = services_data.items()
+        elif isinstance(services_data, list):
+            items = []
+            for idx, val in enumerate(services_data):
+                if val: items.append((str(idx), val))
+        else:
+            return []
 
-    results = []
+        for sid, s in items:
+            if not isinstance(s, dict): continue
+            if not s.get("isActive", True): continue
 
-    for sid, s in services.items():
+            results.append({
+                "serviceId": sid,
+                "serviceName": s.get("name") or s.get("serviceName") or "Service",
+                "price": int(s.get("price", 0)),
+                "duration": int(s.get("duration", 30))
+            })
 
-        if not s.get("isActive", True):  # Filter inactive
-            continue
-
-        results.append({
-            "serviceId": sid,
-            "serviceName": s.get("name"),
-            "price": int(s.get("price",0)),
-            "duration": int(s.get("duration",30))
-        })
-
-    return results
+        return results
+    except Exception as e:
+        print(f"❌ Error in get_services_by_salon: {e}")
+        return []
 
 
 # ============================================
@@ -474,23 +483,31 @@ def get_services_by_salon(salon_id, collection="salons"):
 # ============================================
 
 def get_employees_by_salon(salon_id, collection="salons"):
+    try:
+        ref = db.reference(f"salonandspa/{collection}/{salon_id}/employees")
+        emp_data = ref.get() or {}
 
-    ref = db.reference(
-        f"salonandspa/{collection}/{salon_id}/employees"
-    )
+        results = []
+        
+        if isinstance(emp_data, dict):
+            items = emp_data.items()
+        elif isinstance(emp_data, list):
+            items = []
+            for idx, val in enumerate(emp_data):
+                if val: items.append((str(idx), val))
+        else:
+            return []
 
-    employees = ref.get() or {}
+        for emp_id, emp in items:
+            if not isinstance(emp, dict): continue
+            if emp.get("isActive", True):
+                results.append({
+                    "employeeId": emp_id,
+                    "name": emp.get("name", "Staff"),
+                    "phone": emp.get("phone", "")
+                })
 
-    results = []
-
-    for emp_id, emp in employees.items():
-
-        if emp.get("isActive",True):
-
-            results.append({
-                "employeeId": emp_id,
-                "name": emp.get("name","Staff"),
-                "phone": emp.get("phone","")
-            })
-
-    return results
+        return results
+    except Exception as e:
+        print(f"❌ Error in get_employees_by_salon: {e}")
+        return []
