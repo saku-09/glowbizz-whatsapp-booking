@@ -359,39 +359,58 @@ def get_salons_by_city(city):
     salons = salons_ref.get() or {}
     spas = spas_ref.get() or {}
 
+    # ── DIAGNOSTIC: print raw keys of first salon to identify field names ──
+    if salons:
+        first_key = next(iter(salons))
+        print("🔍 RAW SALON KEYS:", list(salons[first_key].keys()))
+        print("🔍 RAW SALON DATA:", salons[first_key])
+    else:
+        print("⚠️ No salons node found in Firebase at all!")
+    # ─────────────────────────────────────────────────────────────────────────
+
     results = []
 
     # SALONS
     for salon_id, salon in salons.items():
 
-        address = str(salon.get("address","")).lower()
-        branch = str(salon.get("branch","")).lower()
+        address = str(salon.get("address", "")).lower()
+        branch  = str(salon.get("branch",  "")).lower()
+        city_field = str(salon.get("city", "")).lower()
 
-        if city in address or city in branch:
+        if city in address or city in branch or city in city_field:
+
+            name    = salon.get("name") or salon.get("salonName") or "Salon"
+            address_val = salon.get("address") or ""
 
             results.append({
                 "id": salon_id,
-                "name": salon.get("name") or salon.get("salonName"),
-                "address": salon.get("address"),
-                "ownerUid": salon.get("ownerUid")
+                "name": name,
+                "address": address_val,
+                "ownerUid": salon.get("ownerUid"),
+                "type": "salon"
             })
 
     # SPAS
     for spa_id, spa in spas.items():
 
-        address = str(spa.get("address","")).lower()
-        branch = str(spa.get("branch","")).lower()
+        address = str(spa.get("address", "")).lower()
+        branch  = str(spa.get("branch",  "")).lower()
+        city_field = str(spa.get("city", "")).lower()
 
-        if city in address or city in branch:
+        if city in address or city in branch or city in city_field:
+
+            name    = spa.get("name") or spa.get("salonName") or "Spa"
+            address_val = spa.get("address") or ""
 
             results.append({
                 "id": spa_id,
-                "name": spa.get("name") or spa.get("salonName"),
-                "address": spa.get("address"),
-                "ownerUid": spa.get("ownerUid")
+                "name": name,
+                "address": address_val,
+                "ownerUid": spa.get("ownerUid"),
+                "type": "spa"
             })
 
-    print("SALONS FOUND:", results)
+    print("SALONS/SPAS FOUND:", results)
 
     return results
 

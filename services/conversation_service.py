@@ -98,6 +98,31 @@ def handle_conversation(user_id, message):
     print("MESSAGE RECEIVED:", msg)
     print("DEBUG:", user_id, state, msg)
 
+
+# ==================================================
+# GLOBAL RESTART — any greeting resets the session
+# ==================================================
+
+    RESTART_KEYWORDS = {"HI", "HII", "HIII", "HELLO", "HEY", "START", "RESTART", "MENU", "HOME"}
+
+    if msg_upper in RESTART_KEYWORDS:
+
+        SESSIONS.pop(user_id, None)   # clear any existing session
+
+        SESSIONS[user_id] = {"state": "MAIN_MENU", "data": {}}
+
+        send_whatsapp_buttons(
+            user_id,
+            "✨ *Welcome to NexSalon* ✨\n\nYour personal salon booking assistant 💇‍♀️",
+            [
+                {"id": "BOOK",   "title": "Book Appointment"},
+                {"id": "CANCEL", "title": "Cancel Appointment"}
+            ]
+        )
+
+        return ""
+
+
 # ==================================================
 # START MENU
 # ==================================================
@@ -111,7 +136,7 @@ def handle_conversation(user_id, message):
             user_id,
             "✨ *Welcome to NexSalon* ✨\n\nYour personal salon booking assistant 💇‍♀️",
             [
-                {"id": "BOOK", "title": "Book Appointment"},
+                {"id": "BOOK",   "title": "Book Appointment"},
                 {"id": "CANCEL", "title": "Cancel Appointment"}
             ]
         )
@@ -157,7 +182,7 @@ def handle_conversation(user_id, message):
         print("SALONS FROM FIREBASE:", salons)
 
         if not salons:
-            return "❌ No salons found in this city."
+            return "❌ No salons found in this city. Please try another city."
 
         data["salons"] = salons
 
@@ -168,17 +193,23 @@ def handle_conversation(user_id, message):
 
         for salon in salons:
 
+            title = (salon["name"] or "Salon")[:24]          # WhatsApp title limit: 24 chars
+            description = (salon["address"] or "")[:72]      # WhatsApp description limit: 72 chars
+
             rows.append({
                 "id": salon["id"],
-                "title": salon["name"],
-                "description": salon["address"]
+                "title": title,
+                "description": description
             })
 
-        send_whatsapp_list(
+        result = send_whatsapp_list(
             user_id,
             "💇 Select a Salon",
             rows
         )
+
+        if not result:
+            return "⚠️ Could not display salon list. Please type your city again."
 
         return ""
 
