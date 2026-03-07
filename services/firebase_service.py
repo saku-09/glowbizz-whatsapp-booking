@@ -40,7 +40,6 @@ if not firebase_admin._apps:
 
 print("🔥 Firebase Connected")
 
-
 # ============================================
 # NORMALIZE DATE
 # ============================================
@@ -85,7 +84,7 @@ def get_salon_timings(salon_id, day):
 # ============================================
 
 def get_booked_slots_from_salon_node(salon_id, date):
-
+    
     date = normalize_date(date)
 
     ref = db.reference(f"salonandspa/salons/{salon_id}/slots/{date}")
@@ -94,17 +93,39 @@ def get_booked_slots_from_salon_node(salon_id, date):
 
     booked = []
 
-    for _, slot in slots.items():
+    for slot in slots.values():
 
         if slot.get("status") in ["booked", "confirmed"]:
 
-            booked.append({
-                "startTime": slot.get("startTime"),
-                "endTime": slot.get("endTime")
-            })
+            start_time = slot.get("startTime")
+
+            if start_time:
+                booked.append(start_time)
 
     return booked
 
+# ============================================
+# CHECK SLOT AVAILABILITY (PREVENT DOUBLE BOOKING)
+# ============================================
+
+def is_slot_available(salon_id, date, start_time):
+
+    date = normalize_date(date)
+
+    ref = db.reference(
+        f"salonandspa/salons/{salon_id}/slots/{date}"
+    )
+
+    slots = ref.get() or {}
+
+    for slot in slots.values():
+
+        if slot.get("startTime") == start_time and \
+           slot.get("status") in ["booked", "confirmed"]:
+
+            return False
+
+    return True
 
 # ============================================
 # CREATE CUSTOMER
@@ -122,6 +143,7 @@ def create_customer(customer):
         "phone": customer.get("phone"),
         "gender": customer.get("gender"),
         "age": customer.get("age"),
+        "role": "customer",   # ✅ added
         "createdAt": int(time.time()*1000)
     })
 
@@ -150,19 +172,12 @@ def save_booked_slot(salon_id, booking, appointment_id):
     slot_ref.push({
 
         "appointmentId": appointment_id,
-
         "employeeId": booking["employeeId"],
-
         "serviceId": booking["services"][0]["serviceId"],
-
         "startTime": booking["startTime"],
-
         "endTime": end.strftime("%H:%M"),
-
         "status": booking["status"],
-
         "customerId": booking["customerId"],
-
         "customerName": booking["customer"]["name"]
     })
 
@@ -172,6 +187,17 @@ def save_booked_slot(salon_id, booking, appointment_id):
 # ============================================
 
 def save_whatsapp_booking(salon_id, booking_data):
+    
+    # PREVENT DOUBLE BOOKING
+    if not is_slot_available(
+        salon_id,
+        booking_data["date"],
+        booking_data["startTime"]
+    ):
+        return {
+            "success": False,
+            "message": "⚠️ This slot was just booked. Please choose another slot."
+        }
 
     ref = db.reference(
         f"salonandspa/appointments/salon/{salon_id}"
@@ -182,31 +208,24 @@ def save_whatsapp_booking(salon_id, booking_data):
     booking = {
 
         "appointmentId": "",
-
         "createdAt": int(time.time()*1000),
-
         "customerId": customer_id,
-
         "customer": booking_data["customer"],
 
-        "placeId": booking_data["placeId"],
+        "placeId": salon_id,
+        "salonName": booking_data.get("salonName"),  # ✅ added
 
         "employeeId": booking_data["employeeId"],
-
         "services": booking_data["services"],
 
         "date": normalize_date(booking_data["date"]),
-
         "startTime": booking_data["startTime"],
 
         "totalAmount": booking_data.get("totalAmount",0),
-
         "totalDuration": booking_data.get("totalDuration",30),
 
         "status": "confirmed",
-
         "mode": "whatsapp",
-
         "ownerUid": booking_data.get("ownerUid")
     }
 
@@ -254,7 +273,6 @@ def cancel_appointment_and_cleanup(
         if slot.get("appointmentId") == appointment_id:
 
             slots_ref.child(slot_id).delete()
-
             break
 
 
@@ -295,17 +313,11 @@ def find_latest_active_booking_by_customer(
                     latest = {
 
                         "appointmentId": appointment_id,
-
                         "salonId": salon_id,
-
                         "ownerUid": booking.get("ownerUid"),
-
                         "date": booking.get("date"),
-
                         "startTime": booking.get("startTime"),
-
                         "salonName": booking.get("salonName"),
-
                         "serviceName": booking["services"][0]["serviceName"]
                     }
 
@@ -332,44 +344,63 @@ def find_owner_uid_by_salon(salon_id):
 
     return None
 
-# =====================================================
-# 🏬 GET SALONS BY CITY
-# =====================================================
+
+# ============================================
+# GET SALONS + SPAS BY CITY
+# ============================================
 
 def get_salons_by_city(city):
-    
-    ref = db.reference("salonandspa/salons")
-
-    salons = ref.get() or {}
-
-    results = []
 
     city = city.lower().strip()
 
+    salons_ref = db.reference("salonandspa/salons")
+    spas_ref = db.reference("salonandspa/spas")
+
+    salons = salons_ref.get() or {}
+    spas = spas_ref.get() or {}
+
+    results = []
+
+    # SALONS
     for salon_id, salon in salons.items():
 
-        address = str(salon.get("address", "")).lower()
-        branch = str(salon.get("branch", "")).lower()
-        salon_city = str(salon.get("city", "")).lower()
+        address = str(salon.get("address","")).lower()
+        branch = str(salon.get("branch","")).lower()
 
-        if city in address or city in branch or city == salon_city:
+        if city in address or city in branch:
 
             results.append({
                 "id": salon_id,
-                "name": salon.get("name"),
+                "name": salon.get("name") or salon.get("salonName"),
                 "address": salon.get("address"),
                 "ownerUid": salon.get("ownerUid")
+            })
+
+    # SPAS
+    for spa_id, spa in spas.items():
+
+        address = str(spa.get("address","")).lower()
+        branch = str(spa.get("branch","")).lower()
+
+        if city in address or city in branch:
+
+            results.append({
+                "id": spa_id,
+                "name": spa.get("name") or spa.get("salonName"),
+                "address": spa.get("address"),
+                "ownerUid": spa.get("ownerUid")
             })
 
     print("SALONS FOUND:", results)
 
     return results
 
-# =====================================================
-# 💆 GET SERVICES BY SALON
-# =====================================================
 
-def get_services_by_salon(salon_id: str):
+# ============================================
+# GET SERVICES
+# ============================================
+
+def get_services_by_salon(salon_id):
 
     ref = db.reference(
         f"salonandspa/salons/{salon_id}/services"
@@ -384,18 +415,18 @@ def get_services_by_salon(salon_id: str):
         results.append({
             "serviceId": sid,
             "serviceName": s.get("name"),
-            "price": int(s.get("price", 0)),
-            "duration": int(s.get("duration", 30))
+            "price": int(s.get("price",0)),
+            "duration": int(s.get("duration",30))
         })
 
     return results
 
 
-# =====================================================
-# 👨‍💼 GET EMPLOYEES BY SALON
-# =====================================================
+# ============================================
+# GET EMPLOYEES
+# ============================================
 
-def get_employees_by_salon(salon_id: str):
+def get_employees_by_salon(salon_id):
 
     ref = db.reference(
         f"salonandspa/salons/{salon_id}/employees"
@@ -407,12 +438,12 @@ def get_employees_by_salon(salon_id: str):
 
     for emp_id, emp in employees.items():
 
-        if emp.get("isActive", True):
+        if emp.get("isActive",True):
 
             results.append({
                 "employeeId": emp_id,
-                "name": emp.get("name", "Staff"),
-                "phone": emp.get("phone", "")
+                "name": emp.get("name","Staff"),
+                "phone": emp.get("phone","")
             })
 
     return results

@@ -22,7 +22,6 @@ from services.whatsapp_service import (
     send_whatsapp_message
 )
 
-
 # ==================================================
 # SLOT GENERATOR
 # ==================================================
@@ -67,6 +66,21 @@ def generate_calendar_dates():
 
 
 # ==================================================
+# AUTO EMPLOYEE ASSIGNMENT
+# ==================================================
+
+def auto_assign_employee(employees, time_slot):
+
+    if not employees:
+        return None
+
+    # simple load balancing using time slot hash
+    index = hash(time_slot) % len(employees)
+
+    return employees[index]
+
+
+# ==================================================
 # MAIN CONVERSATION HANDLER
 # ==================================================
 
@@ -80,10 +94,9 @@ def handle_conversation(user_id, message):
     msg = message.strip()
     msg_upper = msg.upper()
     msg_lower = msg.lower()
+
     print("MESSAGE RECEIVED:", msg)
-
     print("DEBUG:", user_id, state, msg)
-
 
 # ==================================================
 # START MENU
@@ -139,7 +152,7 @@ def handle_conversation(user_id, message):
         data["city"] = msg
 
         salons = find_salons_by_city(msg_lower)
-        
+
         print("CITY ENTERED:", msg_lower)
         print("SALONS FROM FIREBASE:", salons)
 
@@ -277,7 +290,8 @@ def handle_conversation(user_id, message):
             msg
         )
 
-        blocked = set(b["startTime"] for b in booked)
+        # FIXED SLOT FILTERING
+        blocked = set(booked)
 
         free_slots = [s for s in slots if s not in blocked]
 
@@ -431,7 +445,8 @@ def handle_conversation(user_id, message):
 
             employees = find_employees_by_salon(salon["id"])
 
-            employee = employees[0]
+            # AUTO EMPLOYEE ASSIGNMENT
+            employee = auto_assign_employee(employees, data["time"])
 
             owner_uid = find_owner_uid_by_salon(salon["id"])
 
@@ -453,7 +468,10 @@ def handle_conversation(user_id, message):
                 "ownerUid": owner_uid
             }
 
-            save_whatsapp_booking(salon["id"], booking)
+            result = save_whatsapp_booking(salon["id"], booking)
+
+            if isinstance(result, dict) and result.get("success") == False:
+                return result["message"]
 
             SESSIONS.pop(user_id, None)
 
