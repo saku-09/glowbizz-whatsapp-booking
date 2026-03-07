@@ -152,4 +152,4 @@ def send_whatsapp_list(to, body_text, rows):
     except Exception as e:
 
         print("❌ WhatsApp List Send Error:", str(e))
-        return None
+        return None

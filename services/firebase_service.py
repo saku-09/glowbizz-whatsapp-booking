@@ -196,8 +196,8 @@ def save_booked_slot(salon_id, booking, appointment_id, collection="salons"):
 # SAVE WHATSAPP BOOKING
 # ============================================
 
-def save_whatsapp_booking(salon_id, booking_data, collection="salons"):
-
+def save_whatsapp_booking(salon_id, booking_data, collection="salon"):
+    
     with _booking_lock:
         # ── ATOMIC: check + save under one lock so two users can't grab the same slot ──
 
@@ -267,7 +267,7 @@ def cancel_appointment_and_cleanup(
         salon_id,
         appointment_id,
         date,
-        collection="salons"
+        collection="salon"
 ):
 
     appt_ref = db.reference(
@@ -304,7 +304,7 @@ def find_latest_active_booking_by_customer(
     latest = None
     latest_time = 0
 
-    collections = ["salons", "spas"]
+    collections = ["salon", "spa"]
 
     for col in collections:
         
