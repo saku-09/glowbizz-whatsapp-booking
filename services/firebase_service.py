@@ -1,6 +1,11 @@
 import os
 import time
+import threading
 from datetime import datetime, timedelta
+
+# One lock per (salon_id, date, start_time) would be ideal but a single
+# global lock is simpler and safe — booking confirmations are rare events.
+_booking_lock = threading.Lock()
 
 from dotenv import load_dotenv
 
@@ -187,61 +192,63 @@ def save_booked_slot(salon_id, booking, appointment_id):
 # ============================================
 
 def save_whatsapp_booking(salon_id, booking_data):
-    
-    # PREVENT DOUBLE BOOKING
-    if not is_slot_available(
-        salon_id,
-        booking_data["date"],
-        booking_data["startTime"]
-    ):
-        return {
-            "success": False,
-            "message": "⚠️ This slot was just booked. Please choose another slot."
+
+    with _booking_lock:
+        # ── ATOMIC: check + save under one lock so two users can't grab the same slot ──
+
+        if not is_slot_available(
+            salon_id,
+            booking_data["date"],
+            booking_data["startTime"]
+        ):
+            return {
+                "success": False,
+                "message": "⚠️ This slot was just booked. Please choose another time."
+            }
+
+        ref = db.reference(
+            f"salonandspa/appointments/salon/{salon_id}"
+        )
+
+        customer_id = create_customer(booking_data["customer"])
+
+        booking = {
+
+            "appointmentId": "",
+            "createdAt": int(time.time()*1000),
+            "customerId": customer_id,
+            "customer": booking_data["customer"],
+
+            "placeId": salon_id,
+            "salonName": booking_data.get("salonName"),
+
+            "employeeId": booking_data["employeeId"],
+            "services": booking_data["services"],
+
+            "date": normalize_date(booking_data["date"]),
+            "startTime": booking_data["startTime"],
+
+            "totalAmount": booking_data.get("totalAmount", 0),
+            "totalDuration": booking_data.get("totalDuration", 30),
+
+            "status": "confirmed",
+            "mode": "whatsapp",
+            "ownerUid": booking_data.get("ownerUid")
         }
 
-    ref = db.reference(
-        f"salonandspa/appointments/salon/{salon_id}"
-    )
+        new_ref = ref.push()
 
-    customer_id = create_customer(booking_data["customer"])
+        booking["appointmentId"] = new_ref.key
 
-    booking = {
+        new_ref.set(booking)
 
-        "appointmentId": "",
-        "createdAt": int(time.time()*1000),
-        "customerId": customer_id,
-        "customer": booking_data["customer"],
+        save_booked_slot(
+            salon_id,
+            booking,
+            new_ref.key
+        )
 
-        "placeId": salon_id,
-        "salonName": booking_data.get("salonName"),  # ✅ added
-
-        "employeeId": booking_data["employeeId"],
-        "services": booking_data["services"],
-
-        "date": normalize_date(booking_data["date"]),
-        "startTime": booking_data["startTime"],
-
-        "totalAmount": booking_data.get("totalAmount",0),
-        "totalDuration": booking_data.get("totalDuration",30),
-
-        "status": "confirmed",
-        "mode": "whatsapp",
-        "ownerUid": booking_data.get("ownerUid")
-    }
-
-    new_ref = ref.push()
-
-    booking["appointmentId"] = new_ref.key
-
-    new_ref.set(booking)
-
-    save_booked_slot(
-        salon_id,
-        booking,
-        new_ref.key
-    )
-
-    return new_ref.key
+        return new_ref.key
 
 
 # ============================================
