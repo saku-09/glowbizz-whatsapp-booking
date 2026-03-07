@@ -28,16 +28,22 @@ from services.whatsapp_service import (
 
 def generate_slots_by_duration(open_time, close_time, duration):
 
+    if not open_time or not close_time:
+        return []
+
     slots = []
 
-    start = datetime.strptime(open_time, "%H:%M")
-    end = datetime.strptime(close_time, "%H:%M")
+    try:
+        start = datetime.strptime(open_time, "%H:%M")
+        end = datetime.strptime(close_time, "%H:%M")
 
-    current = start
+        current = start
 
-    while current + timedelta(minutes=duration) <= end:
-        slots.append(current.strftime("%H:%M"))
-        current += timedelta(minutes=duration)
+        while current + timedelta(minutes=duration) <= end:
+            slots.append(current.strftime("%H:%M"))
+            current += timedelta(minutes=duration)
+    except:
+        return []
 
     return slots
 
@@ -175,46 +181,21 @@ def handle_conversation(user_id, message):
     if state == "CITY":
 
         data["city"] = msg
+        data["salon_page"] = 0               # start at page 0
 
-        salons = find_salons_by_city(msg_lower)
+        all_salons = find_salons_by_city(msg_lower)
 
         print("CITY ENTERED:", msg_lower)
-        print("SALONS FROM FIREBASE:", salons)
+        print("SALONS FROM FIREBASE:", all_salons)
 
-        if not salons:
+        if not all_salons:
             return "❌ No salons found in this city. Please try another city name."
 
-        # WhatsApp List API: max 10 rows allowed
-        salons = salons[:10]
+        data["salons"] = all_salons          # store ALL salons, paginate on display
 
-        data["salons"] = salons
-
-        rows = []
-
-        for salon in salons:
-
-            title = (salon["name"] or "Salon")[:24]        # hard limit: 24 chars
-            description = (salon["address"] or "")[:72]    # hard limit: 72 chars
-
-            row = {
-                "id": str(salon["id"]),
-                "title": title
-            }
-
-            # only add description if it has content — empty string causes API error
-            if description:
-                row["description"] = description
-
-            rows.append(row)
-
-        result = send_whatsapp_list(
-            user_id,
-            "💇 Select a Salon or Spa",
-            rows
-        )
+        result = _send_salon_page(user_id, all_salons, page=0)
 
         if not result:
-            # list send failed — keep state at CITY so user can retry
             return "⚠️ Could not show salon list. Please try again or type a different city."
 
         # Only advance state after successful send
@@ -225,11 +206,92 @@ def handle_conversation(user_id, message):
 
 
 # ==================================================
+# SALON PAGE SENDER (helper)
+# ==================================================
+
+def _send_salon_page(user_id, all_salons, page):
+    """Send one page of salons (9 per page) with a 'See More' row if needed."""
+
+    PAGE_SIZE = 9
+    start = page * PAGE_SIZE
+    page_salons = all_salons[start: start + PAGE_SIZE]
+
+    rows = []
+
+    for salon in page_salons:
+        title = (salon["name"] or "Salon")[:24]
+        row = {"id": str(salon["id"]), "title": title}
+        description = (salon["address"] or "")[:72]
+        if description:
+            row["description"] = description
+        rows.append(row)
+
+    # Add 'See More' if there are more salons beyond this page
+    if start + PAGE_SIZE < len(all_salons):
+        rows.append({
+            "id": "MORE_SALONS",
+            "title": "➡️ See More",
+            "description": f"Showing {start+1}–{start+len(page_salons)} of {len(all_salons)}"
+        })
+
+    total_pages = (len(all_salons) + PAGE_SIZE - 1) // PAGE_SIZE
+    header = f"💇 Select a Salon or Spa (Page {page+1}/{total_pages})"
+
+    return send_whatsapp_list(user_id, header, rows)
+
+
+def _send_service_page(user_id, all_services, page):
+    """Send one page of services (9 per page) with a 'See More' row if needed."""
+
+    PAGE_SIZE = 9
+    start = page * PAGE_SIZE
+    page_items = all_services[start: start + PAGE_SIZE]
+
+    rows = []
+
+    for s in page_items:
+        title = (s["serviceName"] or "Service")[:24]
+        desc = f"₹{s['price']} | {s['duration']} min"
+        rows.append({
+            "id": str(s["serviceId"]),
+            "title": title,
+            "description": desc
+        })
+
+    # Add 'See More' if there are more services beyond this page
+    if start + PAGE_SIZE < len(all_services):
+        rows.append({
+            "id": "MORE_SERVICES",
+            "title": "➡️ See More Services",
+            "description": f"Showing {start+1}–{start+len(page_items)} of {len(all_services)}"
+        })
+
+    total_pages = (len(all_services) + PAGE_SIZE - 1) // PAGE_SIZE
+    header = f"💆 Select Service (Page {page+1}/{total_pages})"
+
+    return send_whatsapp_list(user_id, header, rows)
+
+
+# ==================================================
 # SALON SELECT
 # ==================================================
 
     if state == "SELECT_SALON":
 
+        # ── Handle "See More" pagination ──
+        if msg_upper == "MORE_SALONS":
+
+            data["salon_page"] = data.get("salon_page", 0) + 1
+            SESSIONS[user_id] = session
+
+            result = _send_salon_page(user_id, data["salons"], page=data["salon_page"])
+
+            if not result:
+                return "⚠️ Could not load next page. Please try again."
+
+            return ""
+
+        # ── Normal salon selection ──
         salon = None
 
         for s in data["salons"]:
@@ -238,32 +300,27 @@ def handle_conversation(user_id, message):
                 break
 
         if not salon:
-            return "Invalid salon."
+            return "❌ Invalid selection. Please pick a salon from the list, or tap ➡️ See More."
 
         data["salon"] = salon
+        data["service_page"] = 0
 
-        services = find_services_by_salon(salon["id"])
+        collection = f"{salon.get('type', 'salon')}s"  # "salons" or "spas"
+        all_services = find_services_by_salon(salon["id"], collection=collection)
 
-        data["services"] = services
+        if not all_services:
+            return "❌ This salon has no active services available for booking right now."
+
+        data["services"] = all_services
+        data["collection"] = collection
+
+        result = _send_service_page(user_id, all_services, page=0)
+
+        if not result:
+            return "⚠️ Could not show service list. Please try selecting the salon again."
 
         session["state"] = "SELECT_SERVICE"
         SESSIONS[user_id] = session
-
-        rows = []
-
-        for s in services:
-
-            rows.append({
-                "id": s["serviceId"],
-                "title": s["serviceName"],
-                "description": f"₹{s['price']} | {s['duration']} min"
-            })
-
-        send_whatsapp_list(
-            user_id,
-            "Select Service",
-            rows
-        )
 
         return ""
 
@@ -274,15 +331,29 @@ def handle_conversation(user_id, message):
 
     if state == "SELECT_SERVICE":
 
+        # ── Handle "See More" pagination ──
+        if msg_upper == "MORE_SERVICES":
+
+            data["service_page"] = data.get("service_page", 0) + 1
+            SESSIONS[user_id] = session
+
+            result = _send_service_page(user_id, data["services"], page=data["service_page"])
+
+            if not result:
+                return "⚠️ Could not load next page. Please try again."
+
+            return ""
+
+        # ── Normal service selection ──
         service = None
 
         for s in data["services"]:
-            if str(s["serviceId"]) == msg:
+            if str(s["serviceId"]).upper() == msg_upper:
                 service = s
                 break
 
         if not service:
-            return "Invalid service."
+            return "❌ Invalid selection. Please pick a service from the list, or tap ➡️ See More."
 
         data["service"] = service
 
@@ -312,10 +383,11 @@ def handle_conversation(user_id, message):
         service = data["service"]
 
         dt = datetime.strptime(msg, "%d-%m-%Y")
-
         day_name = dt.strftime("%A").lower()
 
-        timings = get_salon_timings(salon["id"], day_name)
+        collection = data.get("collection", "salons")
+
+        timings = get_salon_timings(salon["id"], day_name, collection=collection)
 
         if not timings or not timings.get("isOpen"):
             return "Salon is closed that day."
@@ -328,16 +400,34 @@ def handle_conversation(user_id, message):
 
         booked = get_booked_slots_from_salon_node(
             salon["id"],
-            msg
+            msg,
+            collection=collection
         )
 
-        # FIXED SLOT FILTERING
-        blocked = set(booked)
+        free_slots = []
+        new_duration = int(service["duration"])
 
-        free_slots = [s for s in slots if s not in blocked]
+        for slot_start in slots:
+            
+            # Check if this slot overlaps with ANY booked slot
+            is_overlap = False
+            
+            s_dt = datetime.strptime(slot_start, "%H:%M")
+            s_end_dt = s_dt + timedelta(minutes=new_duration)
+
+            for b in booked:
+                b_start_dt = datetime.strptime(b["start"], "%H:%M")
+                b_end_dt = datetime.strptime(b["end"], "%H:%M")
+
+                if s_dt < b_end_dt and b_start_dt < s_end_dt:
+                    is_overlap = True
+                    break
+            
+            if not is_overlap:
+                free_slots.append(slot_start)
 
         if not free_slots:
-            return "No slots available."
+            return "❌ No available slots for this service on this date. Please try another date."
 
         data["generated_slots"] = free_slots
 
@@ -352,11 +442,14 @@ def handle_conversation(user_id, message):
                 "title": slot
             })
 
-        send_whatsapp_list(
+        result = send_whatsapp_list(
             user_id,
             "⏰ Select Time Slot",
             rows
         )
+
+        if not result:
+            return "⚠️ Could not show time slots. Please try selecting the date again."
 
         return ""
 
@@ -484,7 +577,8 @@ def handle_conversation(user_id, message):
             salon = data["salon"]
             service = data["service"]
 
-            employees = find_employees_by_salon(salon["id"])
+            collection = data.get("collection", "salons")
+            employees = find_employees_by_salon(salon["id"], collection=collection)
 
             # AUTO EMPLOYEE ASSIGNMENT
             employee = auto_assign_employee(employees, data["time"])
@@ -501,15 +595,16 @@ def handle_conversation(user_id, message):
                 },
 
                 "placeId": salon["id"],
-                "employeeId": employee["employeeId"],
+                "employeeId": employee["employeeId"] if employee else "auto",
                 "services": [service],
+                "totalDuration": int(service.get("duration", 30)),
                 "date": data["date"],
                 "startTime": data["time"],
                 "status": "confirmed",
                 "ownerUid": owner_uid
             }
 
-            result = save_whatsapp_booking(salon["id"], booking)
+            result = save_whatsapp_booking(salon["id"], booking, collection=collection)
 
             if isinstance(result, dict) and result.get("success") == False:
                 return result["message"]
@@ -552,7 +647,8 @@ def handle_conversation(user_id, message):
         cancel_appointment_and_cleanup(
             salon_id=result["salonId"],
             appointment_id=result["appointmentId"],
-            date=result["date"]
+            date=result["date"],
+            collection=result.get("collection", "salons")
         )
 
         SESSIONS.pop(user_id, None)

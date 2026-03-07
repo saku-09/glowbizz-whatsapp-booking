@@ -27,12 +27,12 @@ def find_salons_by_city(city: str):
 # 💆 FIND SERVICES BY SALON
 # =====================================================
 
-def find_services_by_salon(salon_id: str):
+def find_services_by_salon(salon_id: str, collection="salons"):
 
     if not salon_id:
         return []
 
-    services = get_services_by_salon(salon_id)
+    services = get_services_by_salon(salon_id, collection=collection)
 
     if not services:
         return []
@@ -44,12 +44,12 @@ def find_services_by_salon(salon_id: str):
 # 👨‍💼 FIND EMPLOYEES BY SALON
 # =====================================================
 
-def find_employees_by_salon(salon_id: str):
+def find_employees_by_salon(salon_id: str, collection="salons"):
 
     if not salon_id:
         return []
 
-    employees = get_employees_by_salon(salon_id)
+    employees = get_employees_by_salon(salon_id, collection=collection)
 
     if not employees:
         return []

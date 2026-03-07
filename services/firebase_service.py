@@ -68,9 +68,9 @@ def normalize_date(date):
 # SALON TIMINGS
 # ============================================
 
-def get_salon_timings(salon_id, day):
+def get_salon_timings(salon_id, day, collection="salons"):
 
-    ref = db.reference(f"salonandspa/salons/{salon_id}/timings/{day}")
+    ref = db.reference(f"salonandspa/{collection}/{salon_id}/timings/{day}")
 
     data = ref.get()
 
@@ -88,24 +88,28 @@ def get_salon_timings(salon_id, day):
 # BOOKED SLOTS
 # ============================================
 
-def get_booked_slots_from_salon_node(salon_id, date):
+def get_booked_slots_from_salon_node(salon_id, date, collection="salons"):
     
     date = normalize_date(date)
 
-    ref = db.reference(f"salonandspa/salons/{salon_id}/slots/{date}")
+    ref = db.reference(f"salonandspa/{collection}/{salon_id}/slots/{date}")
 
-    slots = ref.get() or {}
+    slots_data = ref.get() or {}
 
     booked = []
 
-    for slot in slots.values():
+    for slot in slots_data.values():
 
         if slot.get("status") in ["booked", "confirmed"]:
 
             start_time = slot.get("startTime")
+            end_time = slot.get("endTime")
 
-            if start_time:
-                booked.append(start_time)
+            if start_time and end_time:
+                booked.append({
+                    "start": start_time,
+                    "end": end_time
+                })
 
     return booked
 
@@ -113,21 +117,22 @@ def get_booked_slots_from_salon_node(salon_id, date):
 # CHECK SLOT AVAILABILITY (PREVENT DOUBLE BOOKING)
 # ============================================
 
-def is_slot_available(salon_id, date, start_time):
+def is_slot_available(salon_id, date, start_time, duration=30, collection="salons"):
 
     date = normalize_date(date)
 
-    ref = db.reference(
-        f"salonandspa/salons/{salon_id}/slots/{date}"
-    )
+    booked_slots = get_booked_slots_from_salon_node(salon_id, date, collection=collection)
 
-    slots = ref.get() or {}
+    new_start = datetime.strptime(start_time, "%H:%M")
+    new_end = new_start + timedelta(minutes=duration)
 
-    for slot in slots.values():
+    for slot in booked_slots:
+        
+        b_start = datetime.strptime(slot["start"], "%H:%M")
+        b_end = datetime.strptime(slot["end"], "%H:%M")
 
-        if slot.get("startTime") == start_time and \
-           slot.get("status") in ["booked", "confirmed"]:
-
+        # Overlap check: (start1 < end2) and (start2 < end1)
+        if new_start < b_end and b_start < new_end:
             return False
 
     return True
@@ -159,12 +164,12 @@ def create_customer(customer):
 # SAVE BOOKED SLOT
 # ============================================
 
-def save_booked_slot(salon_id, booking, appointment_id):
+def save_booked_slot(salon_id, booking, appointment_id, collection="salons"):
 
     date = normalize_date(booking["date"])
 
     slot_ref = db.reference(
-        f"salonandspa/salons/{salon_id}/slots/{date}"
+        f"salonandspa/{collection}/{salon_id}/slots/{date}"
     )
 
     start = datetime.strptime(
@@ -191,7 +196,7 @@ def save_booked_slot(salon_id, booking, appointment_id):
 # SAVE WHATSAPP BOOKING
 # ============================================
 
-def save_whatsapp_booking(salon_id, booking_data):
+def save_whatsapp_booking(salon_id, booking_data, collection="salons"):
 
     with _booking_lock:
         # ── ATOMIC: check + save under one lock so two users can't grab the same slot ──
@@ -199,7 +204,9 @@ def save_whatsapp_booking(salon_id, booking_data):
         if not is_slot_available(
             salon_id,
             booking_data["date"],
-            booking_data["startTime"]
+            booking_data["startTime"],
+            duration=booking_data.get("totalDuration", 30),
+            collection=collection
         ):
             return {
                 "success": False,
@@ -207,7 +214,7 @@ def save_whatsapp_booking(salon_id, booking_data):
             }
 
         ref = db.reference(
-            f"salonandspa/appointments/salon/{salon_id}"
+            f"salonandspa/appointments/{collection}/{salon_id}"
         )
 
         customer_id = create_customer(booking_data["customer"])
@@ -245,7 +252,8 @@ def save_whatsapp_booking(salon_id, booking_data):
         save_booked_slot(
             salon_id,
             booking,
-            new_ref.key
+            new_ref.key,
+            collection=collection
         )
 
         return new_ref.key
@@ -258,11 +266,12 @@ def save_whatsapp_booking(salon_id, booking_data):
 def cancel_appointment_and_cleanup(
         salon_id,
         appointment_id,
-        date
+        date,
+        collection="salons"
 ):
 
     appt_ref = db.reference(
-        f"salonandspa/appointments/salon/{salon_id}/{appointment_id}"
+        f"salonandspa/appointments/{collection}/{salon_id}/{appointment_id}"
     )
 
     appt_ref.update({
@@ -270,7 +279,7 @@ def cancel_appointment_and_cleanup(
     })
 
     slots_ref = db.reference(
-        f"salonandspa/salons/{salon_id}/slots/{date}"
+        f"salonandspa/{collection}/{salon_id}/slots/{date}"
     )
 
     slots = slots_ref.get() or {}
@@ -292,41 +301,44 @@ def find_latest_active_booking_by_customer(
         name
 ):
 
-    ref = db.reference("salonandspa/appointments/salon")
-
-    salons = ref.get() or {}
-
     latest = None
     latest_time = 0
 
-    for salon_id, bookings in salons.items():
+    collections = ["salons", "spas"]
 
-        for appointment_id, booking in bookings.items():
+    for col in collections:
+        
+        ref = db.reference(f"salonandspa/appointments/{col}")
+        all_bookings = ref.get() or {}
 
-            if booking.get("status") != "confirmed":
-                continue
+        for salon_id, bookings in all_bookings.items():
 
-            customer = booking.get("customer",{})
+            for appointment_id, booking in bookings.items():
 
-            if customer.get("phone")==phone and \
-               customer.get("name","").lower()==name.lower():
+                if booking.get("status") != "confirmed":
+                    continue
 
-                created = booking.get("createdAt",0)
+                customer = booking.get("customer", {})
 
-                if created > latest_time:
+                if customer.get("phone") == phone and \
+                   customer.get("name", "").lower() == name.lower():
 
-                    latest_time = created
+                    created = booking.get("createdAt", 0)
 
-                    latest = {
+                    if created > latest_time:
 
-                        "appointmentId": appointment_id,
-                        "salonId": salon_id,
-                        "ownerUid": booking.get("ownerUid"),
-                        "date": booking.get("date"),
-                        "startTime": booking.get("startTime"),
-                        "salonName": booking.get("salonName"),
-                        "serviceName": booking["services"][0]["serviceName"]
-                    }
+                        latest_time = created
+
+                        latest = {
+                            "appointmentId": appointment_id,
+                            "salonId": salon_id,
+                            "ownerUid": booking.get("ownerUid"),
+                            "date": booking.get("date"),
+                            "startTime": booking.get("startTime"),
+                            "salonName": booking.get("salonName"),
+                            "serviceName": booking["services"][0]["serviceName"],
+                            "collection": col
+                        }
 
     return latest
 
@@ -380,6 +392,9 @@ def get_salons_by_city(city):
     # SALONS
     for salon_id, salon in salons.items():
 
+        if not salon.get("isActive", True):  # Filter inactive
+            continue
+
         address = str(salon.get("address", "")).lower()
         branch  = str(salon.get("branch",  "")).lower()
         city_field = str(salon.get("city", "")).lower()
@@ -399,6 +414,9 @@ def get_salons_by_city(city):
 
     # SPAS
     for spa_id, spa in spas.items():
+
+        if not spa.get("isActive", True):  # Filter inactive
+            continue
 
         address = str(spa.get("address", "")).lower()
         branch  = str(spa.get("branch",  "")).lower()
@@ -426,10 +444,10 @@ def get_salons_by_city(city):
 # GET SERVICES
 # ============================================
 
-def get_services_by_salon(salon_id):
+def get_services_by_salon(salon_id, collection="salons"):
 
     ref = db.reference(
-        f"salonandspa/salons/{salon_id}/services"
+        f"salonandspa/{collection}/{salon_id}/services"
     )
 
     services = ref.get() or {}
@@ -437,6 +455,9 @@ def get_services_by_salon(salon_id):
     results = []
 
     for sid, s in services.items():
+
+        if not s.get("isActive", True):  # Filter inactive
+            continue
 
         results.append({
             "serviceId": sid,
@@ -452,10 +473,10 @@ def get_services_by_salon(salon_id):
 # GET EMPLOYEES
 # ============================================
 
-def get_employees_by_salon(salon_id):
+def get_employees_by_salon(salon_id, collection="salons"):
 
     ref = db.reference(
-        f"salonandspa/salons/{salon_id}/employees"
+        f"salonandspa/{collection}/{salon_id}/employees"
     )
 
     employees = ref.get() or {}
