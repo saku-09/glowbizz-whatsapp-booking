@@ -163,7 +163,7 @@ def send_whatsapp_template(phone, customer, salon, service, staff, date, time):
 
     payload = {
         "messaging_product": "whatsapp",
-        "to": f"91{phone}",
+        "to": str(phone),
         "type": "template",
         "template": {
             "name": "appointment_reminder_nexsalon",
