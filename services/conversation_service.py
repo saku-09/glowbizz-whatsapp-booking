@@ -591,7 +591,7 @@ def handle_conversation(user_id, message):
 
     if state == "CONFIRM":
 
-        if msg in ["CONFIRM", "CONFIRM BOOKING"]:
+        if msg_upper in ["CONFIRM", "CONFIRM BOOKING"]:
 
             salon = data["salon"]
             service = data["service"]
