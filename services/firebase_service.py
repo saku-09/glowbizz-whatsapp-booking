@@ -203,12 +203,15 @@ def save_whatsapp_booking(salon_id, booking_data, collection="salon"):
         # ── ATOMIC: check + save under one lock so two users can't grab the same slot ──
         print("🔥 COLLECTION USED:", collection)
         print("🔥 APPOINTMENT PATH:", f"salonandspa/appointments/{collection}/{salon_id}")
+        
+        collection_plural = f"{collection}s"
+        
         if not is_slot_available(
             salon_id,
             booking_data["date"],
             booking_data["startTime"],
             duration=booking_data.get("totalDuration", 30),
-            collection=collection
+            collection=collection_plural
         ):
             return {
                 "success": False,
@@ -255,7 +258,7 @@ def save_whatsapp_booking(salon_id, booking_data, collection="salon"):
             salon_id,
             booking,
             new_ref.key,
-            collection=collection
+            collection=collection_plural
         )
 
         return new_ref.key
@@ -282,8 +285,9 @@ def cancel_appointment_and_cleanup(
     })
 
     # 2️⃣ Delete slot from salon slots
+    collection_plural = f"{collection}s"
     slots_ref = db.reference(
-        f"salonandspa/salons/{salon_id}/slots/{date}"
+        f"salonandspa/{collection_plural}/{salon_id}/slots/{date}"
     )
 
     slots = slots_ref.get() or {}
@@ -546,7 +550,7 @@ def get_customer_active_bookings(phone):
 
     results = []
 
-    collections = ["salon", "spas"]
+    collections = ["salon", "spa"]
 
     for col in collections:
 
