@@ -468,20 +468,26 @@ def handle_conversation(user_id, message):
 
             for b in booked:
 
-                b_start_dt = datetime.strptime(b["startTime"], "%H:%M")
-                b_end_dt = datetime.strptime(b["endTime"], "%H:%M")
+             start = b.get("startTime")
+             end = b.get("endTime")
 
-                if s_dt < b_end_dt and b_start_dt < s_end_dt:
-                    is_overlap = True
-                    break
+            if not start or not end:
+              continue
+
+            b_start_dt = datetime.strptime(start, "%H:%M")
+            b_end_dt = datetime.strptime(end, "%H:%M")
+
+            if s_dt < b_end_dt and b_start_dt < s_end_dt:
+               is_overlap = True
+            break
 
             if not is_overlap:
                 free_slots.append(slot_start)
 
         # ❌ NO SLOTS
-        if not free_slots:
+            if not free_slots:
 
-            send_whatsapp_list(
+              send_whatsapp_list(
                 user_id,
                 "❌ No slots available on this date.\n\nPlease choose another date.",
                 generate_calendar_dates()
