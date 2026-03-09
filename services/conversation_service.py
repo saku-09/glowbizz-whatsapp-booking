@@ -593,7 +593,7 @@ def handle_conversation(user_id, message):
             salon = data["salon"]
             service = data["service"]
 
-            collection = data.get("collection", "salons")
+            collection = data.get("collection", "salon")
             employees = find_employees_by_salon(salon["id"], collection=collection)
 
             # AUTO EMPLOYEE ASSIGNMENT
