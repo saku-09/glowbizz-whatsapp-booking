@@ -400,6 +400,7 @@ def handle_conversation(user_id, message):
         salon = data["salon"]
         service = data["service"]
 
+     
         dt = datetime.strptime(msg, "%d-%m-%Y")
         day_name = dt.strftime("%A").lower()
 
@@ -407,70 +408,80 @@ def handle_conversation(user_id, message):
 
         timings = get_salon_timings(salon["id"], day_name, collection=collection)
 
-        if not timings or not timings.get("isOpen"):
-            return "Salon is closed that day."
+    if not timings or not timings.get("isOpen"):
+        return "Salon is closed that day."
 
-        duration = int(service.get("duration", 30))
+    duration = int(service.get("duration", 30))
 
-        slots = generate_slots_by_duration(
-            timings["open"],
-            timings["close"],
-            duration
-        )
+    slots = generate_slots_by_duration(
+        timings["open"],
+        timings["close"],
+        duration
+    )
 
-        booked = get_booked_slots_from_salon_node(
-            salon["id"],
-            msg,
-            collection=collection
-        )
+    booked = get_booked_slots_from_salon_node(
+        salon["id"],
+        msg,
+        collection=collection
+    )
 
-        free_slots = []
+    free_slots = []
 
-        for slot_start in slots:
-            
-            # Check if this slot overlaps with ANY booked slot
-            is_overlap = False
-            
-            s_dt = datetime.strptime(slot_start, "%H:%M")
-            s_end_dt = s_dt + timedelta(minutes=duration)
+    for slot_start in slots:
 
-            for b in booked:
-                b_start_dt = datetime.strptime(b["start"], "%H:%M")
-                b_end_dt = datetime.strptime(b["end"], "%H:%M")
+        is_overlap = False
 
-                if s_dt < b_end_dt and b_start_dt < s_end_dt:
-                    is_overlap = True
-                    break
-            
-            if not is_overlap:
-                free_slots.append(slot_start)
+        s_dt = datetime.strptime(slot_start, "%H:%M")
+        s_end_dt = s_dt + timedelta(minutes=duration)
 
-        if not free_slots:
-            return "❌ No available slots for this service on this date. Please try another date."
+        for b in booked:
+            b_start_dt = datetime.strptime(b["start"], "%H:%M")
+            b_end_dt = datetime.strptime(b["end"], "%H:%M")
 
-        data["generated_slots"] = free_slots
+            if s_dt < b_end_dt and b_start_dt < s_end_dt:
+                is_overlap = True
+                break
 
-        session["state"] = "SELECT_SLOT"
-        SESSIONS[user_id] = session
+        if not is_overlap:
+            free_slots.append(slot_start)
 
-        rows = []
+    # ❌ NO SLOTS → reopen date picker
+    if not free_slots:
 
-        for slot in free_slots:
-            rows.append({
-                "id": slot,
-                "title": slot
-            })
-
-        result = send_whatsapp_list(
+        send_whatsapp_list(
             user_id,
-            "⏰ Select Time Slot",
-            rows
+            "❌ No slots available on this date.\n\nPlease choose another date.",
+            generate_calendar_dates()
         )
 
-        if not result:
-            return "⚠️ Could not show time slots. Please try selecting the date again."
-
+        session["state"] = "SELECT_DATE"
+        SESSIONS[user_id] = session
         return ""
+
+    # ✅ SLOTS AVAILABLE → show slot list
+    data["generated_slots"] = free_slots
+
+    session["state"] = "SELECT_SLOT"
+    SESSIONS[user_id] = session
+
+    rows = []
+
+    for slot in free_slots[:10]:   # WhatsApp limit
+        rows.append({
+            "id": slot,
+            "title": slot
+        })
+
+    result = send_whatsapp_list(
+        user_id,
+        "⏰ Select Time Slot",
+        rows
+    )
+
+    if not result:
+        return "⚠️ Could not show time slots. Please try selecting the date again."
+
+    return ""
 
 
 # ==================================================
