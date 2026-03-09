@@ -318,8 +318,10 @@ def handle_conversation(user_id, message):
         data["salon"] = salon
         data["service_page"] = 0
 
-        collection = f"{salon.get('type', 'salon')}s"  # "salons" or "spas"
-        all_services = find_services_by_salon(salon["id"], collection=collection)
+        business_type = salon.get('type', 'salon')  # "salon" or "spa"
+        collection_plural = f"{business_type}s"     # "salons" or "spas"
+        
+        all_services = find_services_by_salon(salon["id"], collection=collection_plural)
 
         print("SERVICES FOUND:", all_services)
 
@@ -327,7 +329,8 @@ def handle_conversation(user_id, message):
             return "❌ This salon has no active services available for booking right now."
 
         data["services"] = all_services
-        data["collection"] = collection
+        data["business_type"] = business_type
+        data["collection"] = collection_plural
 
         result = _send_service_page(user_id, all_services, page=0)
 
@@ -596,8 +599,10 @@ def handle_conversation(user_id, message):
             salon = data["salon"]
             service = data["service"]
 
-            collection = data.get("collection", "salon")
-            employees = find_employees_by_salon(salon["id"], collection=collection)
+            business_type = data.get("business_type", "salon")
+            collection_plural = data.get("collection", "salons")
+
+            employees = find_employees_by_salon(salon["id"], collection=collection_plural)
 
             # AUTO EMPLOYEE ASSIGNMENT
             employee = auto_assign_employee(employees, data["time"])
@@ -626,7 +631,7 @@ def handle_conversation(user_id, message):
                 "ownerUid": owner_uid
             }
 
-            result = save_whatsapp_booking(salon["id"], booking, collection=collection)
+            result = save_whatsapp_booking(salon["id"], booking, collection=business_type)
 
             if isinstance(result, dict) and result.get("success") == False:
                 return result["message"]

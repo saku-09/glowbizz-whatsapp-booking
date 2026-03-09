@@ -203,6 +203,6 @@ def reminder_loop():
 
         time.sleep(600)  # run every 10 minutes
 
-
+print("🚀 Reminder service initialized")
 # Start reminder thread automatically
 threading.Thread(target=reminder_loop, daemon=True).start()           
