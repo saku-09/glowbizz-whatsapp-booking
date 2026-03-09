@@ -1,7 +1,12 @@
 # services/notification_service.py
 
-from services.firebase_service import get_owner_phone
+from services.firebase_service import get_owner_phone, get_appointments_for_reminder
 from services.whatsapp_service import send_whatsapp_message
+from firebase_admin import db
+
+import time
+import threading
+
 
 
 # =====================================================
@@ -77,7 +82,33 @@ def build_cancel_message(cancel_data: dict):
     )
 
     return message
+# ============================================
+# BUILD REMINDER MESSAGE
+# ============================================
 
+def build_reminder_message(booking: dict):
+
+    customer = booking.get("customer", {})
+    services = booking.get("services", [])
+
+    name = customer.get("name", "Customer")
+
+    service_name = services[0].get("serviceName", "Service") if services else "Service"
+
+    date = booking.get("date")
+    time = booking.get("startTime")
+
+    message = (
+        "⏰ *Appointment Reminder*\n\n"
+        f"Hi {name},\n\n"
+        f"Your appointment for *{service_name}* is coming up.\n\n"
+        f"📅 Date: {date}\n"
+        f"⏰ Time: {time}\n\n"
+        "Please arrive a few minutes early.\n"
+        "— NexSalon"
+    )
+
+    return message
 
 # =====================================================
 # 📲 SEND OWNER NOTIFICATION
@@ -124,3 +155,54 @@ def notify_owner_cancel(cancel_data: dict, owner_uid: str):
     send_whatsapp_message(owner_phone, message)
 
     print("📲 Owner notified about cancellation")
+ # ============================================
+# SEND CUSTOMER REMINDER
+# ============================================
+
+def notify_customers_for_reminders():
+
+    appointments = get_appointments_for_reminder()
+
+    for appt in appointments:
+
+        booking = appt["booking"]
+
+        customer = booking.get("customer", {})
+        phone = str(customer.get("phone", "")).strip()          
+        if not phone:
+            continue
+
+        message = build_reminder_message(booking)
+
+        success = send_whatsapp_message(phone, message)
+
+        if success:
+
+            db.reference(
+                f"salonandspa/appointments/{appt['collection']}/{appt['salonId']}/{appt['appointmentId']}"
+            ).update({
+                "reminderSent": True
+            })
+
+            print("✅ Reminder sent:", phone)  
+        else:
+            print("❌ Reminder failed:", phone) 
+# =====================================================
+# 🔁 REMINDER LOOP
+# =====================================================
+
+
+def reminder_loop():
+
+    while True:
+
+        try:
+            notify_customers_for_reminders()
+        except Exception as e:
+            print("❌ Reminder loop error:", e)
+
+        time.sleep(600)  # run every 10 minutes
+
+
+# Start reminder thread automatically
+threading.Thread(target=reminder_loop, daemon=True).start()           

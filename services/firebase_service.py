@@ -574,5 +574,55 @@ def get_customer_active_bookings(phone):
                     "collection": col,
                     "ownerUid": booking.get("ownerUid")
                 })
+    return results            
+# ============================================
+# GET APPOINTMENTS NEEDING REMINDER
+# ============================================
+def get_appointments_for_reminder():
+
+    now = datetime.now()
+    collections = ["salon", "spa"]
+    results = []
+
+    for col in collections:
+
+        ref = db.reference(f"salonandspa/appointments/{col}")
+        data = ref.get() or {}
+
+        for salon_id, bookings in data.items():
+
+            for appointment_id, booking in bookings.items():
+
+                status = booking.get("status")
+
+                if status not in ["confirmed", "booked"]:
+                    continue
+
+                if booking.get("reminderSent"):
+                    continue
+
+                date = booking.get("date")
+                time_slot = booking.get("startTime")
+
+                if not date or not time_slot:
+                    continue
+
+                try:
+                    appointment_time = datetime.strptime(f"{date} {time_slot}", "%d-%m-%Y %H:%M")
+                except ValueError:
+                    print("Invalid date format:", date, time_slot)
+                    continue
+
+                diff_minutes = (appointment_time - now).total_seconds() / 60
+
+                # send reminder 2 hours before
+                if 0 < diff_minutes <= 120:
+
+                    results.append({
+                        "appointmentId": appointment_id,
+                        "salonId": salon_id,
+                        "collection": col,
+                        "booking": booking
+                    })
 
     return results
