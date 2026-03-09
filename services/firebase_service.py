@@ -546,7 +546,7 @@ def get_customer_active_bookings(phone):
 
     results = []
 
-    collections = ["salons", "spas"]
+    collections = ["salon", "spas"]
 
     for col in collections:
 
