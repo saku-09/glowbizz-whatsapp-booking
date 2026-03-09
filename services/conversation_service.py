@@ -513,7 +513,7 @@ def handle_conversation(user_id, message):
 
     if state == "GENDER":
 
-     gender_map = {
+       gender_map = {
         "MALE": "Male",
         "FEMALE": "Female",
         "OTHER": "Other"
@@ -529,29 +529,28 @@ def handle_conversation(user_id, message):
 
     return "Enter your Age"
 
-
 # ==================================================
 # AGE
 # ==================================================
 
     if state == "AGE":
 
-        try:
+      try:
 
-            age = int(msg)
+        age = int(msg)
 
-            if age < 1 or age > 120:
-                return "Enter valid age."
-
-            data["age"] = age
-
-            session["state"] = "PHONE"
-            SESSIONS[user_id] = session
-
-            return "Enter Phone Number"
-
-        except:
+        if age < 1 or age > 120:
             return "Enter valid age."
+
+        data["age"] = age
+
+        session["state"] = "PHONE"
+        SESSIONS[user_id] = session
+
+        return "Enter Phone Number"
+
+      except:
+        return "Enter valid age."
 
 
 # ==================================================
