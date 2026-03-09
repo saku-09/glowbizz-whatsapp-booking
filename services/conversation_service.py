@@ -165,6 +165,39 @@ def _send_service_page(user_id, all_services, page):
 
 
 # ==================================================
+# SLOT PAGE SENDER
+# ==================================================
+
+def _send_slot_page(user_id, all_slots, page):
+
+    PAGE_SIZE = 9
+
+    start = page * PAGE_SIZE
+    page_slots = all_slots[start:start + PAGE_SIZE]
+
+    rows = []
+
+    for slot in page_slots:
+        rows.append({
+            "id": slot,
+            "title": slot
+        })
+
+    # Add see more button
+    if start + PAGE_SIZE < len(all_slots):
+        rows.append({
+            "id": "MORE_SLOTS",
+            "title": "➡️ See More Slots"
+        })
+
+    return send_whatsapp_list(
+        user_id,
+        f"⏰ Select Time Slot (Page {page+1})",
+        rows
+    )
+
+
+# ==================================================
 # MAIN CONVERSATION HANDLER
 # ==================================================
 
@@ -389,9 +422,9 @@ def handle_conversation(user_id, message):
         return ""
 
 
-# ==================================================
-# DATE SELECT
-# ==================================================
+        # ==================================================
+    # DATE SELECT
+    # ==================================================
 
     if state == "SELECT_DATE":
 
@@ -400,7 +433,6 @@ def handle_conversation(user_id, message):
         salon = data["salon"]
         service = data["service"]
 
-     
         dt = datetime.strptime(msg, "%d-%m-%Y")
         day_name = dt.strftime("%A").lower()
 
@@ -408,87 +440,88 @@ def handle_conversation(user_id, message):
 
         timings = get_salon_timings(salon["id"], day_name, collection=collection)
 
-    if not timings or not timings.get("isOpen"):
-        return "Salon is closed that day."
+        if not timings or not timings.get("isOpen"):
+            return "❌ Salon is closed that day."
 
-    duration = int(service.get("duration", 30))
+        duration = int(service.get("duration", 30))
 
-    slots = generate_slots_by_duration(
-        timings["open"],
-        timings["close"],
-        duration
-    )
-
-    booked = get_booked_slots_from_salon_node(
-        salon["id"],
-        msg,
-        collection=collection
-    )
-
-    free_slots = []
-
-    for slot_start in slots:
-
-        is_overlap = False
-
-        s_dt = datetime.strptime(slot_start, "%H:%M")
-        s_end_dt = s_dt + timedelta(minutes=duration)
-
-        for b in booked:
-            b_start_dt = datetime.strptime(b["start"], "%H:%M")
-            b_end_dt = datetime.strptime(b["end"], "%H:%M")
-
-            if s_dt < b_end_dt and b_start_dt < s_end_dt:
-                is_overlap = True
-                break
-
-        if not is_overlap:
-            free_slots.append(slot_start)
-
-    # ❌ NO SLOTS → reopen date picker
-    if not free_slots:
-
-        send_whatsapp_list(
-            user_id,
-            "❌ No slots available on this date.\n\nPlease choose another date.",
-            generate_calendar_dates()
+        slots = generate_slots_by_duration(
+            timings["open"],
+            timings["close"],
+            duration
         )
 
-        session["state"] = "SELECT_DATE"
+        booked = get_booked_slots_from_salon_node(
+            salon["id"],
+            msg,
+            collection=collection
+        )
+
+        free_slots = []
+
+        for slot_start in slots:
+
+            is_overlap = False
+
+            s_dt = datetime.strptime(slot_start, "%H:%M")
+            s_end_dt = s_dt + timedelta(minutes=duration)
+
+            for b in booked:
+
+                b_start_dt = datetime.strptime(b["startTime"], "%H:%M")
+                b_end_dt = datetime.strptime(b["endTime"], "%H:%M")
+
+                if s_dt < b_end_dt and b_start_dt < s_end_dt:
+                    is_overlap = True
+                    break
+
+            if not is_overlap:
+                free_slots.append(slot_start)
+
+        # ❌ NO SLOTS
+        if not free_slots:
+
+            send_whatsapp_list(
+                user_id,
+                "❌ No slots available on this date.\n\nPlease choose another date.",
+                generate_calendar_dates()
+            )
+
+            session["state"] = "SELECT_DATE"
+            SESSIONS[user_id] = session
+            return ""
+
+        # ✅ SHOW SLOTS
+        data["generated_slots"] = free_slots
+        data["slot_page"] = 0
+
+        session["state"] = "SELECT_SLOT"
         SESSIONS[user_id] = session
+
+        _send_slot_page(user_id, free_slots, 0)
+
         return ""
-
-    # ✅ SLOTS AVAILABLE → show slot list
-    data["generated_slots"] = free_slots
-
-    session["state"] = "SELECT_SLOT"
-    SESSIONS[user_id] = session
-
-    rows = []
-
-    for slot in free_slots[:10]:   # WhatsApp limit
-        rows.append({
-            "id": slot,
-            "title": slot
-        })
-
-    result = send_whatsapp_list(
-        user_id,
-        "⏰ Select Time Slot",
-        rows
-    )
-
-    if not result:
-        return "⚠️ Could not show time slots. Please try selecting the date again."
-
-    return ""
-
-
 # ==================================================
 # SLOT SELECT
 # ==================================================
 
     if state == "SELECT_SLOT":
+
+        # handle pagination
+        if msg_upper == "MORE_SLOTS":
+
+            data["slot_page"] = data.get("slot_page", 0) + 1
+            SESSIONS[user_id] = session
+
+            return _send_slot_page(
+                user_id,
+                data["generated_slots"],
+                data["slot_page"]
+            )
+
+        # validate slot
+        if msg not in data.get("generated_slots", []):
+            return "❌ Please select a slot from the list."
 
         data["time"] = msg
 
