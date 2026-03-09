@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 from services.conversation_service import handle_conversation
 from services.whatsapp_service import send_whatsapp_message
-from services.notification_service import send_reminder
+import services.notification_service
 import os
 from dotenv import load_dotenv
 
