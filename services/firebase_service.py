@@ -604,7 +604,7 @@ def get_appointments_for_reminder():
                 if booking.get("reminderSent"):
                     continue
 
-                date = booking.get("date")
+                date = normalize_date(booking.get("date"))
                 time_slot = booking.get("startTime")
 
                 if not date or not time_slot:
