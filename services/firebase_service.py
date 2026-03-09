@@ -609,6 +609,10 @@ def get_appointments_for_reminder():
 
                 if not date or not time_slot:
                     continue
+                
+                # Check for today's date
+                if date != now.strftime("%d-%m-%Y"):
+                    continue
 
                 try:
                     appointment_time = datetime.strptime(f"{date} {time_slot}", "%d-%m-%Y %H:%M")

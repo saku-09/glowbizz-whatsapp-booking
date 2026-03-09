@@ -41,12 +41,15 @@ def send_whatsapp_message(to, message):
         print("Status:", response.status_code)
         print("Response:", response.text)
 
-        return response.json()
+        if response.status_code == 200:
+            return True
+        else:
+            return False
 
     except Exception as e:
 
         print("❌ WhatsApp Text Send Error:", str(e))
-        return None
+        return False
 
 
 # =====================================================
@@ -153,3 +156,45 @@ def send_whatsapp_list(to, body_text, rows):
 
         print("❌ WhatsApp List Send Error:", str(e))
         return None
+
+def send_whatsapp_template(phone, customer, salon, service, staff, date, time):
+
+    url = f"https://graph.facebook.com/v19.0/{os.getenv('PHONE_NUMBER_ID')}/messages"
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": f"91{phone}",
+        "type": "template",
+        "template": {
+            "name": "appointment_reminder_nexsalon",
+            "language": {
+                "code": "en_US"
+            },
+            "components": [
+                {
+                    "type": "body",
+                    "parameters": [
+                        {"type": "text", "text": customer},
+                        {"type": "text", "text": salon},
+                        {"type": "text", "text": service},
+                        {"type": "text", "text": staff},
+                        {"type": "text", "text": date},
+                        {"type": "text", "text": time}
+                    ]
+                }
+            ]
+        }
+    }
+
+    headers = {
+        "Authorization": f"Bearer {os.getenv('WHATSAPP_TOKEN')}",
+        "Content-Type": "application/json"
+    }
+
+    response = requests.post(url, json=payload, headers=headers)
+
+    print("📤 Sending template")
+    print("Status:", response.status_code)
+    print("Response:", response.text)
+
+    return response.status_code == 200
