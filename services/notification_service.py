@@ -168,8 +168,18 @@ def notify_customers_for_reminders():
         booking = appt["booking"]
 
         customer = booking.get("customer", {})
-        phone = str(customer.get("phone", "")).strip()          
-        if not phone:
+        phone = str(customer.get("phone", "")).strip()
+
+        # remove + if user stored it
+        phone = phone.replace("+", "")
+
+        # add India country code if missing
+        if not phone.startswith("91"):
+            phone = "91" + phone
+
+        print("📞 Sending reminder to:", phone)
+        if len(phone) != 12:
+            print("❌ Invalid phone number:", phone)
             continue
 
         message = build_reminder_message(booking)
@@ -201,7 +211,7 @@ def reminder_loop():
         except Exception as e:
             print("❌ Reminder loop error:", e)
 
-        time.sleep(600)  # run every 10 minutes
+        time.sleep(60)  # run every 10 minutes
 
 print("🚀 Reminder service initialized")
 # Start reminder thread automatically
