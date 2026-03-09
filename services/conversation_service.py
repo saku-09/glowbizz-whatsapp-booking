@@ -488,23 +488,20 @@ def handle_conversation(user_id, message):
 # NAME
 # ==================================================
     if state == "NAME":
+        data["name"] = msg
+        session["state"] = "GENDER"
+        SESSIONS[user_id] = session
 
-     data["name"] = msg
-
-     session["state"] = "GENDER"
-    SESSIONS[user_id] = session
-
-    send_whatsapp_buttons(
-        user_id,
-        "Select Gender",
-        [
-            {"id": "MALE", "title": "Male"},
-            {"id": "FEMALE", "title": "Female"},
-            {"id": "OTHER", "title": "Other"}
-        ]
-    )
-
-    return ""
+        send_whatsapp_buttons(
+            user_id,
+            "Select Gender",
+            [
+                {"id": "MALE", "title": "Male"},
+                {"id": "FEMALE", "title": "Female"},
+                {"id": "OTHER", "title": "Other"}
+            ]
+        )
+        return ""
 
 
 # ==================================================
@@ -512,45 +509,39 @@ def handle_conversation(user_id, message):
 # ==================================================
 
     if state == "GENDER":
+        gender_map = {
+            "MALE": "Male",
+            "FEMALE": "Female",
+            "OTHER": "Other"
+        }
 
-       gender_map = {
-        "MALE": "Male",
-        "FEMALE": "Female",
-        "OTHER": "Other"
-    }
+        if msg.upper() not in gender_map:
+            return "Please select gender using the buttons."
 
-    if msg.upper() not in gender_map:
-        return "Please select gender using the buttons."
+        data["gender"] = gender_map[msg.upper()]
+        session["state"] = "AGE"
+        SESSIONS[user_id] = session
 
-    data["gender"] = gender_map[msg.upper()]
-
-    session["state"] = "AGE"
-    SESSIONS[user_id] = session
-
-    return "Enter your Age"
+        return "Enter your Age"
 
 # ==================================================
 # AGE
 # ==================================================
 
     if state == "AGE":
+        try:
+            age = int(msg)
+            if age < 1 or age > 120:
+                return "Enter valid age."
 
-      try:
+            data["age"] = age
+            session["state"] = "PHONE"
+            SESSIONS[user_id] = session
 
-        age = int(msg)
+            return "Enter Phone Number"
 
-        if age < 1 or age > 120:
+        except:
             return "Enter valid age."
-
-        data["age"] = age
-
-        session["state"] = "PHONE"
-        SESSIONS[user_id] = session
-
-        return "Enter Phone Number"
-
-      except:
-        return "Enter valid age."
 
 
 # ==================================================
@@ -659,66 +650,50 @@ def handle_conversation(user_id, message):
 # ==================================================
 
     if state == "CANCEL_PHONE":
-
-     data["cancel_phone"] = msg
-
-    session["state"] = "CANCEL_NAME"
-    SESSIONS[user_id] = session
-
-    return "Enter booking name"
-
+        data["cancel_phone"] = msg
+        session["state"] = "CANCEL_NAME"
+        SESSIONS[user_id] = session
+        return "Enter booking name"
 
     if state == "CANCEL_NAME":
-
         data["cancel_name"] = msg
-
-    session["state"] = "CANCEL_DATE"
-    SESSIONS[user_id] = session
-
-    return "Enter appointment date (DD-MM-YYYY)"
-
-
+        session["state"] = "CANCEL_DATE"
+        SESSIONS[user_id] = session
+        return "Enter appointment date (DD-MM-YYYY)"
   
     if state == "CANCEL_DATE":
-
-      data["cancel_date"] = msg
-
-    session["state"] = "CANCEL_TIME"
-    SESSIONS[user_id] = session
-
-    return "Enter appointment time (HH:MM)"
-
+        data["cancel_date"] = msg
+        session["state"] = "CANCEL_TIME"
+        SESSIONS[user_id] = session
+        return "Enter appointment time (HH:MM)"
 
     if state == "CANCEL_TIME":
+        data["cancel_time"] = msg
+        result = find_latest_active_booking_by_customer(
+            phone=data["cancel_phone"],
+            name=data["cancel_name"]
+        )
 
-     data["cancel_time"] = msg
+        if not result:
+            return "❌ No booking found."
 
-     result = find_latest_active_booking_by_customer(
-        phone=data["cancel_phone"],
-        name=data["cancel_name"]
-    )
+        # verify date and time match
+        if result["date"] != data["cancel_date"] or result["startTime"] != data["cancel_time"]:
+            return "❌ Booking details do not match."
 
-    if not result:
-        return "❌ No booking found."
+        cancel_appointment_and_cleanup(
+            salon_id=result["salonId"],
+            appointment_id=result["appointmentId"],
+            date=result["date"],
+            collection=result.get("collection", "salons")
+        )
 
-    # verify date and time match
-    if result["date"] != data["cancel_date"] or result["startTime"] != data["cancel_time"]:
-        return "❌ Booking details do not match."
+        # 🔔 NOTIFY OWNER
+        if result.get("ownerUid"):
+            notify_owner_cancel(result, result["ownerUid"])
 
-    cancel_appointment_and_cleanup(
-        salon_id=result["salonId"],
-        appointment_id=result["appointmentId"],
-        date=result["date"],
-        collection=result.get("collection", "salons")
-    )
-
-    # 🔔 NOTIFY OWNER
-    if result.get("ownerUid"):
-        notify_owner_cancel(result, result["ownerUid"])
-
-    SESSIONS.pop(user_id, None)
-
-    return "✅ Appointment cancelled successfully."
+        SESSIONS.pop(user_id, None)
+        return "✅ Appointment cancelled successfully."
 
 
 # ==================================================
