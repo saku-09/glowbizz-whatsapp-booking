@@ -156,12 +156,16 @@ def notify_customers_for_reminders():
             print("❌ Invalid phone number:", phone)
             continue
 
-        customer_name = customer.get("name")
-        salon_name = booking.get("salonName")
-        service_name = booking.get("services", [{}])[0].get("serviceName")
-        staff_name = booking.get("employeeName")
-        date = booking.get("date")
-        time = booking.get("startTime")
+        customer_name = customer.get("name") or "Customer"
+        salon_name = booking.get("salonName") or "Salon"
+        
+        services = booking.get("services") or [{}]
+        service_dict = services[0] if len(services) > 0 else {}
+        service_name = service_dict.get("serviceName") or service_dict.get("name") or "Service"
+        
+        staff_name = booking.get("employeeName") or "Staff"
+        date = booking.get("date") or "Scheduled Date"
+        time = booking.get("startTime") or "Scheduled Time"
 
         print("📋 Reminder Data:")
         print("Customer:", customer_name)

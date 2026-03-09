@@ -625,6 +625,43 @@ def get_appointments_for_reminder():
                 # send reminder 2 hours before
                 if 0 < diff_minutes <= 120:
 
+                    # ==========================================
+                    # FETCH MISSING DETAILS FOR NOTIFICATIONS
+                    # ==========================================
+                    business_col = f"{col}s"
+
+                    # 1. Salon Name
+                    s_name = booking.get("salonName")
+                    if not s_name or s_name == "None":
+                        s_node = db.reference(f"salonandspa/{business_col}/{salon_id}").get() or {}
+                        booking["salonName"] = s_node.get("name") or s_node.get("salonName") or "Salon"
+
+                    # 2. Staff Name
+                    e_name = booking.get("employeeName")
+                    emp_id = str(booking.get("employeeId", ""))
+                    if (not e_name or e_name == "None") and emp_id and emp_id != "auto":
+                        e_node = db.reference(f"salonandspa/employees/{emp_id}").get() or {}
+                        if isinstance(e_node, dict) and e_node.get("name"):
+                            booking["employeeName"] = e_node.get("name")
+                            
+                        if "employeeName" not in booking or not booking["employeeName"] or booking["employeeName"] == "None":
+                             booking["employeeName"] = "Staff"
+
+                    # 3. Service Name
+                    services_list = booking.get("services") or []
+                    if isinstance(services_list, list) and len(services_list) > 0:
+                        serv_name = services_list[0].get("serviceName")
+                        serv_id = str(services_list[0].get("serviceId", ""))
+                        if (not serv_name or serv_name == "None") and serv_id:
+                            all_servs = get_services_by_salon(salon_id, collection=business_col)
+                            for srv in all_servs:
+                                if str(srv.get("serviceId")) == serv_id:
+                                    services_list[0]["serviceName"] = srv.get("serviceName")
+                                    break
+                            if "serviceName" not in services_list[0] or not services_list[0]["serviceName"] or services_list[0]["serviceName"] == "None":
+                                services_list[0]["serviceName"] = "Service"
+                        booking["services"] = services_list
+
                     results.append({
                         "appointmentId": appointment_id,
                         "salonId": salon_id,
