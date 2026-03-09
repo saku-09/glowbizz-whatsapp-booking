@@ -1,7 +1,7 @@
 # services/notification_service.py
 
 from services.firebase_service import get_owner_phone, get_appointments_for_reminder
-from services.whatsapp_service import send_whatsapp_message
+from services.whatsapp_service import send_whatsapp_message, send_whatsapp_template
 from firebase_admin import db
 
 import time
@@ -82,33 +82,7 @@ def build_cancel_message(cancel_data: dict):
     )
 
     return message
-# ============================================
-# BUILD REMINDER MESSAGE
-# ============================================
 
-def build_reminder_message(booking: dict):
-
-    customer = booking.get("customer", {})
-    services = booking.get("services", [])
-
-    name = customer.get("name", "Customer")
-
-    service_name = services[0].get("serviceName", "Service") if services else "Service"
-
-    date = booking.get("date")
-    time = booking.get("startTime")
-
-    message = (
-        "⏰ *Appointment Reminder*\n\n"
-        f"Hi {name},\n\n"
-        f"Your appointment for *{service_name}* is coming up.\n\n"
-        f"📅 Date: {date}\n"
-        f"⏰ Time: {time}\n\n"
-        "Please arrive a few minutes early.\n"
-        "— NexSalon"
-    )
-
-    return message
 
 # =====================================================
 # 📲 SEND OWNER NOTIFICATION
@@ -182,10 +156,29 @@ def notify_customers_for_reminders():
             print("❌ Invalid phone number:", phone)
             continue
 
-        message = build_reminder_message(booking)
+        customer_name = customer.get("name")
+        salon_name = booking.get("salonName")
+        service_name = booking.get("services", [{}])[0].get("serviceName")
+        staff_name = booking.get("employeeName")
+        date = booking.get("date")
+        time = booking.get("startTime")
 
-        success = send_whatsapp_message(phone, message)
-
+        print("📋 Reminder Data:")
+        print("Customer:", customer_name)
+        print("Salon:", salon_name)
+        print("Service:", service_name)
+        print("Staff:", staff_name)
+        print("Date:", date)
+        print("Time:", time)
+        success = send_whatsapp_template(
+            phone,
+            customer_name,
+            salon_name,
+            service_name,
+            staff_name,
+            date,
+            time
+        )
         if success:
 
             db.reference(
