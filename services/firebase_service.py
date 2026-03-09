@@ -272,16 +272,18 @@ def cancel_appointment_and_cleanup(
         collection="salon"
 ):
 
+    # 1️⃣ Update appointment status only
     appt_ref = db.reference(
         f"salonandspa/appointments/{collection}/{salon_id}/{appointment_id}"
     )
 
     appt_ref.update({
-        "status": "cancelled_by_customer"
+        "status": "cancelled"
     })
 
+    # 2️⃣ Delete slot from salon slots
     slots_ref = db.reference(
-        f"salonandspa/{collection}/{salon_id}/slots/{date}"
+        f"salonandspa/salons/{salon_id}/slots/{date}"
     )
 
     slots = slots_ref.get() or {}
@@ -291,6 +293,9 @@ def cancel_appointment_and_cleanup(
         if slot.get("appointmentId") == appointment_id:
 
             slots_ref.child(slot_id).delete()
+
+            print("✅ Slot removed:", slot_id)
+
             break
 
 
@@ -532,3 +537,42 @@ def get_employees_by_salon(salon_id, collection="salons"):
     except Exception as e:
         print(f"❌ Error in get_employees_by_salon: {e}")
         return []
+
+# ============================================
+# GET CUSTOMER ACTIVE BOOKINGS
+# ============================================
+
+def get_customer_active_bookings(phone):
+
+    results = []
+
+    collections = ["salons", "spas"]
+
+    for col in collections:
+
+        ref = db.reference(f"salonandspa/appointments/{col}")
+        data = ref.get() or {}
+
+        for salon_id, bookings in data.items():
+
+            for appointment_id, booking in bookings.items():
+
+                if booking.get("status") != "confirmed":
+                    continue
+
+                customer = booking.get("customer", {})
+
+                if customer.get("phone") != phone:
+                    continue
+
+                results.append({
+                    "appointmentId": appointment_id,
+                    "salonId": salon_id,
+                    "date": booking.get("date"),
+                    "time": booking.get("startTime"),
+                    "service": booking.get("services", [{}])[0].get("serviceName", "Service"),
+                    "collection": col,
+                    "ownerUid": booking.get("ownerUid")
+                })
+
+    return results
