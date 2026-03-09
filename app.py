@@ -201,7 +201,16 @@ def webhook():
 
             elif "statuses" in value:
 
-                print("ℹ️ Status update received")
+                status = value["statuses"][0]
+
+                print("\n📊 WHATSAPP MESSAGE STATUS")
+                print("Recipient:", status.get("recipient_id"))
+                print("Status:", status.get("status"))
+                print("Message ID:", status.get("id"))
+                print("Timestamp:", status.get("timestamp"))
+
+                if "errors" in status:
+                    print("❌ Error:", status["errors"])
 
 
         except Exception as e:
