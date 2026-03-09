@@ -274,8 +274,7 @@ def cancel_appointment_and_cleanup(
         date,
         collection="salon"
 ):
-
-    # 1️⃣ Update appointment status only
+    # 1️⃣ Update appointment status only (SINGULAR)
     appt_ref = db.reference(
         f"salonandspa/appointments/{collection}/{salon_id}/{appointment_id}"
     )

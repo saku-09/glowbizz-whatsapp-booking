@@ -165,6 +165,39 @@ def _send_service_page(user_id, all_services, page):
 
 
 # ==================================================
+# SLOT PAGE SENDER
+# ==================================================
+
+def _send_slot_page(user_id, all_slots, page):
+
+    PAGE_SIZE = 9
+
+    start = page * PAGE_SIZE
+    page_slots = all_slots[start:start + PAGE_SIZE]
+
+    rows = []
+
+    for slot in page_slots:
+        rows.append({
+            "id": slot,
+            "title": slot
+        })
+
+    # Add see more button
+    if start + PAGE_SIZE < len(all_slots):
+        rows.append({
+            "id": "MORE_SLOTS",
+            "title": "➡️ See More Slots"
+        })
+
+    return send_whatsapp_list(
+        user_id,
+        f"⏰ Select Time Slot (Page {page+1})",
+        rows
+    )
+
+
+# ==================================================
 # MAIN CONVERSATION HANDLER
 # ==================================================
 
@@ -408,7 +441,7 @@ def handle_conversation(user_id, message):
         timings = get_salon_timings(salon["id"], day_name, collection=collection)
 
         if not timings or not timings.get("isOpen"):
-            return "Salon is closed that day."
+            return "❌ Salon is closed that day. Please choose another date."
 
         duration = int(service.get("duration", 30))
 
@@ -427,87 +460,99 @@ def handle_conversation(user_id, message):
         free_slots = []
 
         for slot_start in slots:
-            
-            # Check if this slot overlaps with ANY booked slot
+
             is_overlap = False
-            
             s_dt = datetime.strptime(slot_start, "%H:%M")
             s_end_dt = s_dt + timedelta(minutes=duration)
 
             for b in booked:
-                b_start_dt = datetime.strptime(b["start"], "%H:%M")
-                b_end_dt = datetime.strptime(b["end"], "%H:%M")
+                start = b.get("start") or b.get("startTime")
+                end = b.get("end") or b.get("endTime")
+
+                if not start or not end:
+                    continue
+
+                b_start_dt = datetime.strptime(start, "%H:%M")
+                b_end_dt = datetime.strptime(end, "%H:%M")
 
                 if s_dt < b_end_dt and b_start_dt < s_end_dt:
                     is_overlap = True
                     break
-            
+
             if not is_overlap:
                 free_slots.append(slot_start)
 
+        # ❌ NO SLOTS
         if not free_slots:
-            return "❌ No available slots for this service on this date. Please try another date."
 
+            send_whatsapp_list(
+                user_id,
+                "❌ No slots available on this date.\n\nPlease choose another date.",
+                generate_calendar_dates()
+            )
+
+            session["state"] = "SELECT_DATE"
+            SESSIONS[user_id] = session
+            return ""
+
+        # ✅ SHOW SLOTS
         data["generated_slots"] = free_slots
+        data["slot_page"] = 0
 
         session["state"] = "SELECT_SLOT"
         SESSIONS[user_id] = session
 
-        rows = []
-
-        for slot in free_slots:
-            rows.append({
-                "id": slot,
-                "title": slot
-            })
-
-        result = send_whatsapp_list(
-            user_id,
-            "⏰ Select Time Slot",
-            rows
-        )
-
-        if not result:
-            return "⚠️ Could not show time slots. Please try selecting the date again."
+        _send_slot_page(user_id, free_slots, 0)
 
         return ""
-
-
 # ==================================================
 # SLOT SELECT
 # ==================================================
 
     if state == "SELECT_SLOT":
 
-        data["time"] = msg
+        # pagination
+        if msg_upper == "MORE_SLOTS":
+
+            data["slot_page"] = data.get("slot_page", 0) + 1
+            SESSIONS[user_id] = session
+
+            return _send_slot_page(
+                user_id,
+                data["generated_slots"],
+                data["slot_page"]
+            )
+
+        selected_slot = msg.strip()
+
+        if selected_slot not in data.get("generated_slots", []):
+            return "❌ Please select a slot from the list."
+
+        data["time"] = selected_slot
 
         session["state"] = "NAME"
         SESSIONS[user_id] = session
 
         return "Please enter your Name"
 
-
 # ==================================================
 # NAME
 # ==================================================
     if state == "NAME":
+        data["name"] = msg
+        session["state"] = "GENDER"
+        SESSIONS[user_id] = session
 
-     data["name"] = msg
-
-     session["state"] = "GENDER"
-    SESSIONS[user_id] = session
-
-    send_whatsapp_buttons(
-        user_id,
-        "Select Gender",
-        [
-            {"id": "MALE", "title": "Male"},
-            {"id": "FEMALE", "title": "Female"},
-            {"id": "OTHER", "title": "Other"}
-        ]
-    )
-
-    return ""
+        send_whatsapp_buttons(
+            user_id,
+            "Select Gender",
+            [
+                {"id": "MALE", "title": "Male"},
+                {"id": "FEMALE", "title": "Female"},
+                {"id": "OTHER", "title": "Other"}
+            ]
+        )
+        return ""
 
 
 # ==================================================
@@ -515,39 +560,32 @@ def handle_conversation(user_id, message):
 # ==================================================
 
     if state == "GENDER":
+        gender_map = {
+            "MALE": "Male",
+            "FEMALE": "Female",
+            "OTHER": "Other"
+        }
 
-     gender_map = {
-        "MALE": "Male",
-        "FEMALE": "Female",
-        "OTHER": "Other"
-    }
+        if msg.upper() not in gender_map:
+            return "Please select gender using the buttons."
 
-    if msg.upper() not in gender_map:
-        return "Please select gender using the buttons."
+        data["gender"] = gender_map[msg.upper()]
+        session["state"] = "AGE"
+        SESSIONS[user_id] = session
 
-    data["gender"] = gender_map[msg.upper()]
-
-    session["state"] = "AGE"
-    SESSIONS[user_id] = session
-
-    return "Enter your Age"
-
+        return "Enter your Age"
 
 # ==================================================
 # AGE
 # ==================================================
 
     if state == "AGE":
-
         try:
-
             age = int(msg)
-
             if age < 1 or age > 120:
                 return "Enter valid age."
 
             data["age"] = age
-
             session["state"] = "PHONE"
             SESSIONS[user_id] = session
 
@@ -604,7 +642,7 @@ def handle_conversation(user_id, message):
 
     if state == "CONFIRM":
 
-        if msg in ["CONFIRM", "CONFIRM BOOKING"]:
+        if msg_upper in ["CONFIRM", "CONFIRM BOOKING"]:
 
             salon = data["salon"]
             service = data["service"]
@@ -665,66 +703,50 @@ def handle_conversation(user_id, message):
 # ==================================================
 
     if state == "CANCEL_PHONE":
-
-     data["cancel_phone"] = msg
-
-    session["state"] = "CANCEL_NAME"
-    SESSIONS[user_id] = session
-
-    return "Enter booking name"
-
+        data["cancel_phone"] = msg
+        session["state"] = "CANCEL_NAME"
+        SESSIONS[user_id] = session
+        return "Enter booking name"
 
     if state == "CANCEL_NAME":
-
         data["cancel_name"] = msg
-
-    session["state"] = "CANCEL_DATE"
-    SESSIONS[user_id] = session
-
-    return "Enter appointment date (DD-MM-YYYY)"
-
-
+        session["state"] = "CANCEL_DATE"
+        SESSIONS[user_id] = session
+        return "Enter appointment date (DD-MM-YYYY)"
   
     if state == "CANCEL_DATE":
-
-      data["cancel_date"] = msg
-
-    session["state"] = "CANCEL_TIME"
-    SESSIONS[user_id] = session
-
-    return "Enter appointment time (HH:MM)"
-
+        data["cancel_date"] = msg
+        session["state"] = "CANCEL_TIME"
+        SESSIONS[user_id] = session
+        return "Enter appointment time (HH:MM)"
 
     if state == "CANCEL_TIME":
+        data["cancel_time"] = msg
+        result = find_latest_active_booking_by_customer(
+            phone=data["cancel_phone"],
+            name=data["cancel_name"]
+        )
 
-     data["cancel_time"] = msg
+        if not result:
+            return "❌ No booking found."
 
-     result = find_latest_active_booking_by_customer(
-        phone=data["cancel_phone"],
-        name=data["cancel_name"]
-    )
+        # verify date and time match
+        if result["date"] != data["cancel_date"] or result["startTime"] != data["cancel_time"]:
+            return "❌ Booking details do not match."
 
-    if not result:
-        return "❌ No booking found."
+        cancel_appointment_and_cleanup(
+            salon_id=result["salonId"],
+            appointment_id=result["appointmentId"],
+            date=result["date"],
+            collection=result.get("collection", "salon")
+        )
 
-    # verify date and time match
-    if result["date"] != data["cancel_date"] or result["startTime"] != data["cancel_time"]:
-        return "❌ Booking details do not match."
+        # 🔔 NOTIFY OWNER
+        if result.get("ownerUid"):
+            notify_owner_cancel(result, result["ownerUid"])
 
-    cancel_appointment_and_cleanup(
-        salon_id=result["salonId"],
-        appointment_id=result["appointmentId"],
-        date=result["date"],
-        collection=result.get("collection", "salons")
-    )
-
-    # 🔔 NOTIFY OWNER
-    if result.get("ownerUid"):
-        notify_owner_cancel(result, result["ownerUid"])
-
-    SESSIONS.pop(user_id, None)
-
-    return "✅ Appointment cancelled successfully."
+        SESSIONS.pop(user_id, None)
+        return "✅ Appointment cancelled successfully."
 
 
 # ==================================================
