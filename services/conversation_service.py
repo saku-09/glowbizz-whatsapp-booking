@@ -690,7 +690,7 @@ def handle_conversation(user_id, message):
             salon_id=result["salonId"],
             appointment_id=result["appointmentId"],
             date=result["date"],
-            collection=result.get("collection", "salons")
+            collection=result.get("collection", "salon")
         )
 
         # 🔔 NOTIFY OWNER
