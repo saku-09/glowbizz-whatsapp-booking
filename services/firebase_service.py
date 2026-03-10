@@ -348,8 +348,6 @@ def save_whatsapp_booking(salon_id, booking_data, collection="salon"):
             "ownerUid": booking_data.get("ownerUid")
         }
 
-        print("BOOKING SAVED:", booking)
-
         new_ref = ref.push()
 
         booking["appointmentId"] = new_ref.key

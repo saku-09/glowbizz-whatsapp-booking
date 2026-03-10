@@ -239,18 +239,21 @@ def handle_conversation(user_id, message):
 
         SESSIONS[user_id] = {"state": "MAIN_MENU", "data": {}}
 
-        send_whatsapp_buttons(
+        result = send_whatsapp_list(
             user_id,
             "✨ *Welcome to NexSalon* ✨\n\nBook your Salon & Spa appointment in seconds.\n\n"
             "Choose an option below 👇",
             [
-                {"id": "BOOK",   "title": "Book Appointment"},
-                {"id": "REBOOK", "title": "Rebook Last"},
-                {"id": "RESCHEDULE", "title": "Reschedule"},
-                {"id": "CANCEL", "title": "Cancel Appointment"},
-                {"id": "MY_BOOKINGS", "title": "My Bookings"}
+                {"id": "BOOK",   "title": "Book Appointment", "description": "Start a new booking"},
+                {"id": "REBOOK", "title": "Rebook Last", "description": "Repeat your last order"},
+                {"id": "RESCHEDULE", "title": "Reschedule", "description": "Change existing booking"},
+                {"id": "CANCEL", "title": "Cancel Appointment", "description": "Cancel a booking"},
+                {"id": "MY_BOOKINGS", "title": "My Bookings", "description": "View all upcoming slots"}
             ]
         )
+
+        if not result:
+            return "⚠️ Service temporarily unavailable. Please type HOME again."
 
         return ""
 
@@ -264,17 +267,20 @@ def handle_conversation(user_id, message):
         session["state"] = "MAIN_MENU"
         SESSIONS[user_id] = session
 
-        send_whatsapp_buttons(
+        result = send_whatsapp_list(
             user_id,
             "✨ *Welcome to NexSalon* ✨\n\nYour personal salon booking assistant 💇‍♀️",
             [
-                {"id": "BOOK",   "title": "Book Appointment"},
-                {"id": "REBOOK", "title": "Rebook Last"},
-                {"id": "RESCHEDULE", "title": "Reschedule"},
-                {"id": "CANCEL", "title": "Cancel Appointment"},
-                {"id": "MY_BOOKINGS", "title": "My Bookings"}
+                {"id": "BOOK",   "title": "Book Appointment", "description": "Start a new booking"},
+                {"id": "REBOOK", "title": "Rebook Last", "description": "Repeat your last order"},
+                {"id": "RESCHEDULE", "title": "Reschedule", "description": "Change existing booking"},
+                {"id": "CANCEL", "title": "Cancel Appointment", "description": "Cancel a booking"},
+                {"id": "MY_BOOKINGS", "title": "My Bookings", "description": "View all upcoming slots"}
             ]
         )
+
+        if not result:
+            return "⚠️ Service temporarily unavailable. Please type START."
 
         return ""
 
