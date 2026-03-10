@@ -12,6 +12,7 @@ from services.firebase_service import (
     get_salon_timings,
     get_booked_slots_from_salon_node,
     is_slot_available,
+    get_available_slots,
     cancel_appointment_and_cleanup,
     find_latest_active_booking_by_customer,
     find_owner_uid_by_salon

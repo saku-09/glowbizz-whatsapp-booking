@@ -480,7 +480,9 @@ def get_salons_by_city(city):
     # SALONS
     for salon_id, salon in salons.items():
 
-        if not salon.get("isActive", True):  # Filter inactive
+    
+        
+        if not salon.get("activeSlot", False):  # Filter those without activeSlot: true
             continue
 
         address = str(salon.get("address", "")).lower()
@@ -503,7 +505,9 @@ def get_salons_by_city(city):
     # SPAS
     for spa_id, spa in spas.items():
 
-        if not spa.get("isActive", True):  # Filter inactive
+       
+
+        if not spa.get("activeSlot", False):  # Filter those without activeSlot: true
             continue
 
         address = str(spa.get("address", "")).lower()
