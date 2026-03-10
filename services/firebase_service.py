@@ -448,6 +448,7 @@ def find_latest_active_booking_by_customer(
                             "salonName": booking.get("salonName"),
                             "services": booking.get("services", []),
                             "serviceName": booking.get("services", [{}])[0].get("serviceName", "Service"),
+                            "customer": customer,
                             "customerName": customer.get("name"),
                             "customerPhone": customer.get("phone"),
                             "collection": col,

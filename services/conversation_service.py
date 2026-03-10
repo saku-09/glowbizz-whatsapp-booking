@@ -591,6 +591,49 @@ def handle_conversation(user_id, message):
 
         data["time"] = selected_slot
 
+        # If this is rebook flow, skip personal questions
+        if data.get("is_rebook"):
+
+            booking = data["last_booking"]
+
+            data["name"] = booking["customerName"]
+            data["phone"] = booking["customerPhone"]
+            data["gender"] = booking.get("customer", {}).get("gender", "Other")
+            data["age"] = booking.get("customer", {}).get("age", "")
+
+            salon = data["salon"]
+            services = data.get("selected_services", [])
+
+            services_text = "\n".join([f"• {s['serviceName']}" for s in services])
+            total_amount = sum(int(s.get("price", 0)) for s in services)
+
+            summary = (
+                "📋 *Appointment Summary*\n\n"
+                f"👤 Name: {data['name']}\n"
+                f"📱 Phone: {data['phone']}\n"
+                f"⚧ Gender: {data['gender']}\n"
+                f"🎂 Age: {data['age']}\n\n"
+                f"🏬 Salon: {salon['name']}\n"
+                f"💆 Services:\n{services_text}\n"
+                f"💰 Total: ₹{total_amount}\n"
+                f"📅 Date: {data['date']}\n"
+                f"⏰ Time: {data['time']}\n\n"
+                "Please confirm your booking 👇"
+            )
+
+            session["state"] = "CONFIRM"
+            SESSIONS[user_id] = session
+
+            send_whatsapp_buttons(
+                user_id,
+                summary,
+                [
+                    {"id": "CONFIRM", "title": "Confirm"}
+                ]
+            )
+
+            return ""
+
         session["state"] = "NAME"
         SESSIONS[user_id] = session
 
@@ -857,6 +900,8 @@ def handle_conversation(user_id, message):
         data["selected_services"] = booking.get("services", [])
         data["salon"] = {"id": booking["salonId"], "name": booking["salonName"]}
         
+        data["is_rebook"] = True  # Flag to skip personal questions later
+
         # Determine collection type from booking info if possible, else default
         data["collection"] = f"{booking.get('collection', 'salon')}s"
         data["business_type"] = booking.get('collection', 'salon')
@@ -871,9 +916,9 @@ def handle_conversation(user_id, message):
             f"Previous Services:\n{services_text}\n\n"
             f"What would you like to do?",
             [
-                {"id": "REBOOK_SAME", "title": "Rebook Same"},
-                {"id": "CHANGE_SERVICE", "title": "Choose Different"},
-                {"id": "CANCEL", "title": "Cancel"}
+                {"id": "AUTO_REBOOK", "title": "⚡ Rebook Same (Auto)"},
+                {"id": "CHANGE_SERVICE", "title": "Choose Another Service"},
+                {"id": "NEW_BOOKING", "title": "Book Completely New"}
             ]
         )
 
@@ -882,23 +927,79 @@ def handle_conversation(user_id, message):
         return ""
 
     if state == "REBOOK_CONFIRM":
-        if msg_upper == "REBOOK_SAME":
-            session["state"] = "SELECT_DATE"
+
+        # 1️⃣ AUTO REBOOK (automatic date + slot)
+        if msg_upper == "AUTO_REBOOK":
+
+            booking = data["last_booking"]
+            salon_id = booking["salonId"]
+            collection = f"{booking.get('collection','salon')}s"
+            services = booking.get("services", [])
+            duration = int(booking.get("totalDuration", 30))
+
+            # check next 7 days automatically
+            found_date = None
+            found_slot = None
+
+            for i in range(7):
+                date_str = (datetime.now() + timedelta(days=i)).strftime("%d-%m-%Y")
+                slots = get_available_slots(
+                    salon_id,
+                    date_str,
+                    duration=duration,
+                    collection=collection
+                )
+                if slots:
+                    found_date = date_str
+                    found_slot = slots[0]
+                    break
+
+            if not found_date:
+                return "❌ No slots available in the next 7 days."
+
+            data["date"] = found_date
+            data["time"] = found_slot
+
+            # Skip questions and show summary directly
+            data["name"] = booking["customerName"]
+            data["phone"] = booking["customerPhone"]
+            data["gender"] = booking.get("customer", {}).get("gender", "Other")
+            data["age"] = booking.get("customer", {}).get("age", "")
+
+            services_text = "\n".join([f"• {s['serviceName']}" for s in services])
+            total_amount = sum(int(s.get("price", 0)) for s in services)
+
+            summary = (
+                "⚡ *Auto Slot Found*\n\n"
+                "📋 *Appointment Summary*\n\n"
+                f"👤 Name: {data['name']}\n"
+                f"📱 Phone: {data['phone']}\n"
+                f"⚧ Gender: {data['gender']}\n"
+                f"🎂 Age: {data['age']}\n\n"
+                f"🏬 Salon: {booking['salonName']}\n"
+                f"💆 Services:\n{services_text}\n"
+                f"💰 Total: ₹{total_amount}\n"
+                f"📅 Date: {data['date']}\n"
+                f"⏰ Time: {data['time']}\n\n"
+                "Please confirm your booking 👇"
+            )
+
+            session["state"] = "CONFIRM"
             SESSIONS[user_id] = session
 
-            rows = generate_calendar_dates()
-            send_whatsapp_list(
+            send_whatsapp_buttons(
                 user_id,
-                "📅 *Choose Appointment Date*\n\nSelect your preferred day 👇",
-                rows
+                summary,
+                [{"id": "CONFIRM", "title": "Confirm"}]
             )
             return ""
 
+        # 2️⃣ CHANGE SERVICE
         elif msg_upper == "CHANGE_SERVICE":
+
             data["selected_services"] = []
-            
-            # We need services list for this salon to show the page
             all_services = find_services_by_salon(data["salon"]["id"], collection=data["collection"])
+            
             if not all_services:
                 return "❌ Could not fetch services for this salon."
             
@@ -910,9 +1011,13 @@ def handle_conversation(user_id, message):
 
             return _send_service_page(user_id, all_services, 0)
 
-        elif msg_upper == "CANCEL":
-            SESSIONS.pop(user_id, None)
-            return "Rebooking cancelled."
+        # 3️⃣ COMPLETELY NEW BOOKING
+        elif msg_upper == "NEW_BOOKING":
+            data.pop("is_rebook", None)
+            session["state"] = "CITY"
+            SESSIONS[user_id] = session
+            return "📍 Please enter your City"
+
         else:
             return "Please choose an option."
 
@@ -1000,7 +1105,7 @@ def handle_conversation(user_id, message):
 
         booking = data["reschedule_booking"]
         
-        # Cancel old
+        # cancel old booking
         cancel_appointment_and_cleanup(
             salon_id=booking["salonId"],
             appointment_id=booking["appointmentId"],
@@ -1008,16 +1113,32 @@ def handle_conversation(user_id, message):
             collection=booking.get("collection", "salon")
         )
 
-        # Create new
-        new_booking = booking.copy()
-        new_booking["date"] = data["reschedule_date"]
-        new_booking["startTime"] = msg
-        new_booking["status"] = "confirmed"
-        
-        # Clean up keys not needed for save_whatsapp_booking or ensure they match what it expects
-        # save_whatsapp_booking expects salon_id, booking_data, collection="salon"
-        # It creates a new customer record from booking_data["customer"]
-        
+        services = booking.get("services", [])
+        total_duration = int(booking.get("totalDuration", 30))
+        total_amount = sum(int(s.get("price", 0)) for s in services)
+        owner_uid = find_owner_uid_by_salon(booking["salonId"])
+
+        # Construct new booking with proper customer object
+        new_booking = {
+            "customer": {
+                "name": booking["customerName"],
+                "phone": booking["customerPhone"],
+                "gender": booking.get("customer", {}).get("gender", ""),
+                "age": booking.get("customer", {}).get("age", "")
+            },
+            "placeId": booking["salonId"],
+            "salonName": booking.get("salonName"),
+            "employeeId": "auto",
+            "employeeName": "Auto-Assign",
+            "services": services,
+            "totalDuration": total_duration,
+            "totalAmount": total_amount,
+            "date": data["reschedule_date"],
+            "startTime": msg,
+            "status": "confirmed",
+            "ownerUid": owner_uid
+        }
+
         result = save_whatsapp_booking(
             booking["salonId"],
             new_booking,
@@ -1028,7 +1149,12 @@ def handle_conversation(user_id, message):
             return result["message"]
 
         SESSIONS.pop(user_id, None)
-        return "✅ *Appointment Rescheduled Successfully!*\n\nYour new appointment is confirmed."
+        return (
+            "✅ *Appointment Rescheduled Successfully!*\n\n"
+            f"📅 New Date: {data['reschedule_date']}\n"
+            f"⏰ New Time: {msg}\n\n"
+            "Your appointment has been successfully updated."
+        )
 
 
 # ==================================================
