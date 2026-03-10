@@ -126,16 +126,17 @@ def is_slot_available(salon_id, date, start_time, duration=30, collection="salon
     # Strict past-time enforcement for today
     now = datetime.now()
     today_str = now.strftime("%d-%m-%Y")
-    
+
     if date == today_str:
         try:
-            s_time_dt = datetime.strptime(start_time, "%H:%M").replace(
-                year=now.year, month=now.month, day=now.day, second=0, microsecond=0
-            )
-            if s_time_dt <= now:
-                print(f"🚫 Slot {start_time} is in the past for today ({today_str}).")
+            slot_time = datetime.strptime(start_time, "%H:%M").time()
+            current_time = now.time()
+
+            if slot_time <= current_time:
+                print(f"🚫 Slot {start_time} already passed.")
                 return False
         except Exception as e:
+            print("Time check error:", e)
             pass
 
     if booked_slots is None:
@@ -192,7 +193,21 @@ def get_available_slots(salon_id, date, collection="salons"):
     
     # Filter through is_slot_available (all checks: past-time & overlap)
     free_slots = []
+    
+    now = datetime.now()
+    today_str = now.strftime("%d-%m-%Y")
+
     for slot_start in potential_slots:
+        
+        # Double safe: Pre-filter past slots for today
+        if date == today_str:
+            try:
+                slot_time = datetime.strptime(slot_start, "%H:%M").time()
+                if slot_time <= now.time():
+                    continue
+            except:
+                pass
+
         # We pass duration=30 because slots are 30 min apart
         if is_slot_available(
             salon_id, 
