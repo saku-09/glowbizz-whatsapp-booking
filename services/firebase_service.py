@@ -123,22 +123,22 @@ def is_slot_available(salon_id, date, start_time, duration=30, collection="salon
 
     date = normalize_date(date)
 
-    # Strict past-time enforcement for today
-    now = datetime.now()
-    today_str = now.strftime("%d-%m-%Y")
+    # Strict past-time enforcement for today (IST)
+    # Get current time in IST (UTC+5:30)
+    utc_now = datetime.utcnow()
+    ist_now = utc_now + timedelta(hours=5, minutes=30)
+    
+    today_str = ist_now.strftime("%d-%m-%Y")
 
     if date == today_str:
         try:
-            slot_datetime = datetime.strptime(
-                f"{date} {start_time}",
-                "%d-%m-%Y %H:%M"
-            )
+            slot_time = datetime.strptime(start_time, "%H:%M").time()
+            current_time = ist_now.time()
 
-            if slot_datetime <= now:
-                print(f"🚫 Slot {start_time} already passed.")
+            if slot_time <= current_time:
+                # print(f"🚫 Slot {start_time} already passed (IST).")
                 return False
         except Exception as e:
-            print("Time check error:", e)
             pass
 
     if booked_slots is None:
@@ -196,20 +196,19 @@ def get_available_slots(salon_id, date, collection="salons"):
     # Filter through is_slot_available (all checks: past-time & overlap)
     free_slots = []
     
-    now = datetime.now()
-    today_str = now.strftime("%d-%m-%Y")
+    utc_now = datetime.utcnow()
+    ist_now = utc_now + timedelta(hours=5, minutes=30)
+    today_str = ist_now.strftime("%d-%m-%Y")
 
     for slot_start in potential_slots:
         
         # Double safe: Pre-filter past slots for today
+        # Double safe: Pre-filter past slots for today (IST)
         if date == today_str:
             try:
-                slot_datetime = datetime.strptime(
-                    f"{date} {slot_start}",
-                    "%d-%m-%Y %H:%M"
-                )
-
-                if slot_datetime <= now:
+                slot_time = datetime.strptime(slot_start, "%H:%M").time()
+                # Use ist_now defined above loop
+                if slot_time <= ist_now.time():
                     continue
             except:
                 pass
