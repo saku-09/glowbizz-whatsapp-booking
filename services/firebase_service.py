@@ -52,14 +52,15 @@ print("🔥 Firebase Connected")
 def normalize_date(date):
 
     try:
-
+        # Handle slashes if present
+        date = date.replace("/", "-")
+        
         if len(date.split("-")[0]) == 4:
             dt = datetime.strptime(date, "%Y-%m-%d")
         else:
             dt = datetime.strptime(date, "%d-%m-%Y")
 
         return dt.strftime("%d-%m-%Y")
-
     except:
         return None
 
@@ -124,15 +125,17 @@ def is_slot_available(salon_id, date, start_time, duration=30, collection="salon
 
     # Strict past-time enforcement for today
     now = datetime.now()
-    if date == now.strftime("%d-%m-%Y"):
+    today_str = now.strftime("%d-%m-%Y")
+    
+    if date == today_str:
         try:
             s_time_dt = datetime.strptime(start_time, "%H:%M").replace(
                 year=now.year, month=now.month, day=now.day, second=0, microsecond=0
             )
             if s_time_dt <= now:
-                print(f"🚫 Slot {start_time} is in the past.")
+                print(f"🚫 Slot {start_time} is in the past for today ({today_str}).")
                 return False
-        except:
+        except Exception as e:
             pass
 
     if booked_slots is None:
