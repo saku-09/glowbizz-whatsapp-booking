@@ -226,6 +226,20 @@ def get_available_slots(salon_id, date, duration=30, collection="salons"):
 
     return free_slots
 
+def find_customer_by_phone(phone):
+
+    ref = db.reference("salonandspa/customer")
+    customers_data = ref.get()
+
+    if not isinstance(customers_data, dict):
+        return None
+
+    for cid, c in customers_data.items():
+        if isinstance(c, dict) and c.get("phone") == phone:
+            return cid
+
+    return None
+
 def create_customer(customer):
 
     ref = db.reference("salonandspa/customer").push()
@@ -268,7 +282,7 @@ def save_booked_slot(salon_id, booking, appointment_id, collection="salons"):
 
         "appointmentId": appointment_id,
         "employeeId": booking["employeeId"],
-        "serviceId": booking["services"][0]["serviceId"],
+        "serviceIds": [s["serviceId"] for s in booking["services"]],
         "startTime": booking["startTime"],
         "endTime": end.strftime("%H:%M"),
         "status": booking["status"],
@@ -306,10 +320,12 @@ def save_whatsapp_booking(salon_id, booking_data, collection="salon"):
             f"salonandspa/appointments/{collection}/{salon_id}"
         )
 
-        customer_id = create_customer(booking_data["customer"])
+        customer_id = find_customer_by_phone(booking_data["customer"]["phone"])
+
+        if not customer_id:
+            customer_id = create_customer(booking_data["customer"])
 
         booking = {
-
             "appointmentId": "",
             "createdAt": int(time.time()*1000),
             "customerId": customer_id,
@@ -331,6 +347,8 @@ def save_whatsapp_booking(salon_id, booking_data, collection="salon"):
             "mode": "whatsapp",
             "ownerUid": booking_data.get("ownerUid")
         }
+
+        print("BOOKING SAVED:", booking)
 
         new_ref = ref.push()
 
@@ -430,10 +448,12 @@ def find_latest_active_booking_by_customer(
                             "date": booking.get("date"),
                             "startTime": booking.get("startTime"),
                             "salonName": booking.get("salonName"),
+                            "services": booking.get("services", []),
                             "serviceName": booking.get("services", [{}])[0].get("serviceName", "Service"),
                             "customerName": customer.get("name"),
                             "customerPhone": customer.get("phone"),
-                            "collection": col
+                            "collection": col,
+                            "totalDuration": booking.get("totalDuration", 30)
                         }
 
     return latest
@@ -659,11 +679,14 @@ def get_customer_active_bookings(phone):
                 results.append({
                     "appointmentId": appointment_id,
                     "salonId": salon_id,
+                    "salonName": booking.get("salonName") or "Salon",
                     "date": booking.get("date"),
                     "time": booking.get("startTime"),
+                    "services": booking.get("services", []),
                     "service": booking.get("services", [{}])[0].get("serviceName", "Service"),
                     "collection": col,
-                    "ownerUid": booking.get("ownerUid")
+                    "ownerUid": booking.get("ownerUid"),
+                    "totalDuration": booking.get("totalDuration", 30)
                 })
     return results            
 # ============================================
