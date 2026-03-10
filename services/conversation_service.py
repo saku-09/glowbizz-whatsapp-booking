@@ -361,6 +361,7 @@ def handle_conversation(user_id, message):
 
         data["salon"] = salon
         data["service_page"] = 0
+        data["selected_services"] = []  # Clear previous selections
 
         business_type = salon.get('type', 'salon')  # "salon" or "spa"
         collection_plural = f"{business_type}s"     # "salons" or "spas"
@@ -417,20 +418,60 @@ def handle_conversation(user_id, message):
         if not service:
             return "❌ Invalid selection. Please pick a service from the list, or tap ➡️ See More."
 
-        data["service"] = service
+        # store multiple services
+        data.setdefault("selected_services", []).append(service)
 
-        session["state"] = "SELECT_DATE"
-        SESSIONS[user_id] = session
-
-        rows = generate_calendar_dates()
-
-        send_whatsapp_list(
-            user_id,
-            "📅 *Choose Appointment Date*\n\nSelect your preferred day 👇",
-            rows
+        service_list = "\n".join(
+            f"• {s['serviceName']}" for s in data["selected_services"]
         )
 
+        send_whatsapp_buttons(
+            user_id,
+            f"✅ *Service Added*\n\n"
+            f"Selected Services:\n{service_list}\n\n"
+            f"Add another service or continue 👇",
+            [
+                {"id": "ADD_MORE_SERVICE", "title": "Add Another"},
+                {"id": "DONE_SERVICE", "title": "Continue"}
+            ]
+        )
+
+        session["state"] = "SERVICE_CONFIRM"
+        SESSIONS[user_id] = session
+
         return ""
+
+
+# ==================================================
+# SERVICE CONFIRM
+# ==================================================
+
+    if state == "SERVICE_CONFIRM":
+
+        if msg_upper == "ADD_MORE_SERVICE":
+
+            session["state"] = "SELECT_SERVICE"
+            SESSIONS[user_id] = session
+
+            return _send_service_page(user_id, data["services"], page=0)
+
+        elif msg_upper == "DONE_SERVICE":
+
+            session["state"] = "SELECT_DATE"
+            SESSIONS[user_id] = session
+
+            rows = generate_calendar_dates()
+
+            send_whatsapp_list(
+                user_id,
+                "📅 *Choose Appointment Date*\n\nSelect your preferred day 👇",
+                rows
+            )
+
+            return ""
+
+        else:
+            return "Please choose an option."
 
 
 # ==================================================
@@ -442,7 +483,8 @@ def handle_conversation(user_id, message):
         data["date"] = msg
 
         salon = data["salon"]
-        service = data["service"]
+        services = data.get("selected_services", [])
+        total_duration = sum(int(s.get("duration", 30)) for s in services)
 
         dt = datetime.strptime(msg, "%d-%m-%Y")
         collection = data.get("collection", "salons")
@@ -451,6 +493,7 @@ def handle_conversation(user_id, message):
         free_slots = get_available_slots(
             salon["id"],
             msg,
+            duration=total_duration,
             collection=collection
         )
 
@@ -579,19 +622,22 @@ def handle_conversation(user_id, message):
         data["phone"] = msg
 
         salon = data["salon"]
-        service = data["service"]
+        services = data.get("selected_services", [])
+        services_text = "\n".join([f"• {s['serviceName']}" for s in services])
+        total_amount = sum(int(s.get("price", 0)) for s in services)
 
         summary = (
-        "📋 *Appointment Summary*\n\n"
-        f"👤 Name: {data['name']}\n"
-        f"📱 Phone: {data['phone']}\n"
-        f"⚧ Gender: {data['gender']}\n"
-        f"🎂 Age: {data['age']}\n\n"
-        f"🏬 Salon: {salon['name']}\n"
-        f"💆 Service: {service['serviceName']}\n"
-        f"📅 Date: {data['date']}\n"
-        f"⏰ Time: {data['time']}\n\n"
-        "Please confirm your booking 👇"
+            "📋 *Appointment Summary*\n\n"
+            f"👤 Name: {data['name']}\n"
+            f"📱 Phone: {data['phone']}\n"
+            f"⚧ Gender: {data['gender']}\n"
+            f"🎂 Age: {data['age']}\n\n"
+            f"🏬 Salon: {salon['name']}\n"
+            f"💆 Services:\n{services_text}\n"
+            f"💰 Total: ₹{total_amount}\n"
+            f"📅 Date: {data['date']}\n"
+            f"⏰ Time: {data['time']}\n\n"
+            "Please confirm your booking 👇"
         )
 
         session["state"] = "CONFIRM"
@@ -618,7 +664,9 @@ def handle_conversation(user_id, message):
         if msg_upper in ["CONFIRM", "CONFIRM BOOKING"]:
 
             salon = data["salon"]
-            service = data["service"]
+            services = data.get("selected_services", [])
+            total_duration = sum(int(s.get("duration", 30)) for s in services)
+            total_amount = sum(int(s.get("price", 0)) for s in services)
 
             business_type = data.get("business_type", "salon")
             collection_plural = data.get("collection", "salons")
@@ -644,8 +692,9 @@ def handle_conversation(user_id, message):
                 "branch": salon.get("branch") or salon.get("address"),
                 "employeeId": employee["employeeId"] if employee else "auto",
                 "employeeName": employee["name"] if employee else "Auto-Assign",
-                "services": [service],
-                "totalDuration": int(service.get("duration", 30)),
+                "services": services,
+                "totalDuration": total_duration,
+                "totalAmount": total_amount,
                 "date": data["date"],
                 "startTime": data["time"],
                 "status": "confirmed",

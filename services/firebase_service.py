@@ -162,7 +162,7 @@ def is_slot_available(salon_id, date, start_time, duration=30, collection="salon
 
     return True
 
-def get_available_slots(salon_id, date, collection="salons"):
+def get_available_slots(salon_id, date, duration=30, collection="salons"):
     """
     Returns available HH:MM slots at 30-min intervals.
     Generates potential slots and filters them using is_slot_available.
@@ -213,12 +213,12 @@ def get_available_slots(salon_id, date, collection="salons"):
             except:
                 pass
 
-        # We pass duration=30 because slots are 30 min apart
+        # We pass the requested duration to check for continuous availability
         if is_slot_available(
             salon_id, 
             date, 
             slot_start, 
-            duration=30, 
+            duration=duration, 
             collection=collection, 
             booked_slots=booked
         ):
