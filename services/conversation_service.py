@@ -123,7 +123,11 @@ def _send_salon_page(user_id, all_salons, page):
         })
 
     total_pages = (len(all_salons) + PAGE_SIZE - 1) // PAGE_SIZE
-    header = f"💇 Select a Salon or Spa (Page {page+1}/{total_pages})"
+    header = (
+    f"🏬 *Choose a Salon*\n"
+    f"Page {page+1}/{total_pages}\n\n"
+    f"Select a salon near you 👇"
+)
 
     return send_whatsapp_list(user_id, header, rows)
 
@@ -161,7 +165,11 @@ def _send_service_page(user_id, all_services, page):
         })
 
     total_pages = (len(all_services) + PAGE_SIZE - 1) // PAGE_SIZE
-    header = f"💆 Select Service (Page {page+1}/{total_pages})"
+    header = (
+    f"💆 *Choose a Service*\n"
+    f"Page {page+1}/{total_pages}\n\n"
+    f"Select the service you want 👇"
+)
 
     return send_whatsapp_list(user_id, header, rows)
 
@@ -194,7 +202,7 @@ def _send_slot_page(user_id, all_slots, page):
 
     return send_whatsapp_list(
         user_id,
-        f"⏰ Select Time Slot (Page {page+1})",
+        f"⏰ *Available Time Slots*\nPage {page+1}\n\nChoose a convenient time 👇",
         rows
     )
 
@@ -232,7 +240,8 @@ def handle_conversation(user_id, message):
 
         send_whatsapp_buttons(
             user_id,
-            "✨ *Welcome to NexSalon* ✨\n\nYour personal salon booking assistant 💇‍♀️",
+            "✨ *Welcome to NexSalon* ✨\n\nBook your Salon & Spa appointment in seconds.\n\n"
+            "Choose an option below 👇",
             [
                 {"id": "BOOK",   "title": "Book Appointment"},
                 {"id": "CANCEL", "title": "Cancel Appointment"}
@@ -417,7 +426,7 @@ def handle_conversation(user_id, message):
 
         send_whatsapp_list(
             user_id,
-            "📅 Select Appointment Date",
+            "📅 *Choose Appointment Date*\n\nSelect your preferred day 👇",
             rows
         )
 
@@ -496,7 +505,7 @@ def handle_conversation(user_id, message):
         session["state"] = "NAME"
         SESSIONS[user_id] = session
 
-        return "Please enter your Name"
+        return "👤 Please enter your *Full Name*"
 
 # ==================================================
 # NAME
@@ -508,7 +517,7 @@ def handle_conversation(user_id, message):
 
         send_whatsapp_buttons(
             user_id,
-            "Select Gender",
+            "⚧ *Select Your Gender*",
             [
                 {"id": "MALE", "title": "Male"},
                 {"id": "FEMALE", "title": "Female"},
@@ -536,7 +545,7 @@ def handle_conversation(user_id, message):
         session["state"] = "AGE"
         SESSIONS[user_id] = session
 
-        return "Enter your Age"
+        return "🎂 Please enter your Age"
 
 # ==================================================
 # AGE
@@ -552,7 +561,7 @@ def handle_conversation(user_id, message):
             session["state"] = "PHONE"
             SESSIONS[user_id] = session
 
-            return "Enter Phone Number"
+            return "📱 Enter your 10 digit phone number"
 
         except:
             return "Enter valid age."
@@ -573,15 +582,16 @@ def handle_conversation(user_id, message):
         service = data["service"]
 
         summary = (
-            f"📋 *Appointment Summary*\n\n"
-            f"Name: {data['name']}\n"
-            f"Phone: {data['phone']}\n"
-            f"Gender: {data['gender']}\n"
-            f"Age: {data['age']}\n\n"
-            f"Salon: {salon['name']}\n"
-            f"Service: {service['serviceName']}\n"
-            f"Date: {data['date']}\n"
-            f"Time: {data['time']}"
+        "📋 *Appointment Summary*\n\n"
+        f"👤 Name: {data['name']}\n"
+        f"📱 Phone: {data['phone']}\n"
+        f"⚧ Gender: {data['gender']}\n"
+        f"🎂 Age: {data['age']}\n\n"
+        f"🏬 Salon: {salon['name']}\n"
+        f"💆 Service: {service['serviceName']}\n"
+        f"📅 Date: {data['date']}\n"
+        f"⏰ Time: {data['time']}\n\n"
+        "Please confirm your booking 👇"
         )
 
         session["state"] = "CONFIRM"
@@ -652,8 +662,11 @@ def handle_conversation(user_id, message):
 
             SESSIONS.pop(user_id, None)
 
-            return "🎉 Appointment confirmed! Thank you for choosing NexSalon."
-
+            return (
+                 "🎉 *Booking Confirmed!*\n\n"
+                 "Your appointment has been successfully booked.\n\n"
+                 "Thank you for choosing NexSalon 💇‍♀️"
+                )
         else:
 
             SESSIONS.pop(user_id, None)
@@ -709,7 +722,10 @@ def handle_conversation(user_id, message):
             notify_owner_cancel(result, result["ownerUid"])
 
         SESSIONS.pop(user_id, None)
-        return "✅ Appointment cancelled successfully."
+        return (
+        "❌ *Appointment Cancelled*\n\n"
+        "Your booking has been cancelled successfully."
+        )
 
 
 # ==================================================
