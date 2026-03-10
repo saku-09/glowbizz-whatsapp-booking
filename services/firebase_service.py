@@ -129,10 +129,12 @@ def is_slot_available(salon_id, date, start_time, duration=30, collection="salon
 
     if date == today_str:
         try:
-            slot_time = datetime.strptime(start_time, "%H:%M").time()
-            current_time = now.time()
+            slot_datetime = datetime.strptime(
+                f"{date} {start_time}",
+                "%d-%m-%Y %H:%M"
+            )
 
-            if slot_time <= current_time:
+            if slot_datetime <= now:
                 print(f"🚫 Slot {start_time} already passed.")
                 return False
         except Exception as e:
@@ -202,8 +204,12 @@ def get_available_slots(salon_id, date, collection="salons"):
         # Double safe: Pre-filter past slots for today
         if date == today_str:
             try:
-                slot_time = datetime.strptime(slot_start, "%H:%M").time()
-                if slot_time <= now.time():
+                slot_datetime = datetime.strptime(
+                    f"{date} {slot_start}",
+                    "%d-%m-%Y %H:%M"
+                )
+
+                if slot_datetime <= now:
                     continue
             except:
                 pass
