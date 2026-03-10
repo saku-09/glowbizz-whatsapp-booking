@@ -3,9 +3,15 @@ import time
 import threading
 from datetime import datetime, timedelta
 
-# One lock per (salon_id, date, start_time) would be ideal but a single
 # global lock is simpler and safe — booking confirmations are rare events.
 _booking_lock = threading.Lock()
+
+def normalize_phone(p):
+    """Returns last 10 digits of a phone number for robust comparison."""
+    if not p: return ""
+    # Remove all non-numeric characters first
+    p_str = "".join(c for c in str(p) if c.isdigit())
+    return p_str[-10:] if len(p_str) >= 10 else p_str
 
 from dotenv import load_dotenv
 
@@ -408,12 +414,14 @@ def cancel_appointment_and_cleanup(
 
 def find_latest_active_booking_by_customer(
         phone,
-        name
+        name=None
 ):
+
+    search_phone = normalize_phone(phone)
+    search_name = name.lower() if name else None
 
     latest = None
     latest_time = 0
-
     collections = ["salon", "spa"]
 
     for col in collections:
@@ -432,6 +440,13 @@ def find_latest_active_booking_by_customer(
             continue
 
         for salon_id, bookings in salon_bookings_items:
+            # Robust conversion of bookings node to dict
+            if isinstance(bookings, list):
+                temp = {}
+                for idx, b in enumerate(bookings):
+                    if b: temp[str(idx)] = b
+                bookings = temp
+                
             if not isinstance(bookings, dict):
                 continue
 
@@ -442,12 +457,19 @@ def find_latest_active_booking_by_customer(
                 if booking.get("status") != "confirmed":
                     continue
 
-                customer = booking.get("customer", {})
+                customer = booking.get("customer")
+                if not isinstance(customer, dict): continue
+                
+                db_phone = normalize_phone(customer.get("phone"))
                 customer_name = str(customer.get("name", "")).lower()
-                search_name = name.lower()
 
-                if customer.get("phone") == phone and \
-                   (search_name == customer_name or search_name in customer_name):
+                # Match phone and (optionally) name
+                phone_matches = (db_phone == search_phone)
+                name_matches = True
+                if search_name:
+                    name_matches = (search_name in customer_name or customer_name in search_name)
+
+                if phone_matches and name_matches:
 
                     created = booking.get("createdAt", 0)
 

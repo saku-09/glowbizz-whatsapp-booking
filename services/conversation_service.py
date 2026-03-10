@@ -882,10 +882,55 @@ def handle_conversation(user_id, message):
 # ==================================================
 
     if state == "REBOOK_PHONE":
-        data["rebook_phone"] = msg
-        session["state"] = "REBOOK_NAME"
+        print(f"\n🔍 DEBUG REBOOK PHONE: {msg}")
+        
+        booking = find_latest_active_booking_by_customer(
+            phone=msg
+        )
+
+        print(f"🔍 BOOKING RESULT FOUND: {True if booking else False}")
+
+        if not booking:
+            return "❌ No previous booking found for this phone number."
+
+        data["last_booking"] = booking
+        data["selected_services"] = booking.get("services", [])
+        data["salon"] = {"id": booking["salonId"], "name": booking["salonName"]}
+        
+        data["is_rebook"] = True  # Flag to skip personal questions later
+
+        # Determine collection type from booking info if possible, else default
+        data["collection"] = f"{booking.get('collection', 'salon')}s"
+        data["business_type"] = booking.get('collection', 'salon')
+
+        services_list = data.get("selected_services", [])
+        services_text_items = []
+        for s in services_list:
+            if isinstance(s, dict) and s.get("serviceName"):
+                services_text_items.append(f"• {s['serviceName']}")
+            elif isinstance(s, str):
+                services_text_items.append(f"• {s}")
+        
+        services_text = "\n".join(services_text_items) if services_text_items else "No services"
+
+        result = send_whatsapp_buttons(
+            user_id,
+            f"🔁 *Rebook Last Appointment*\n\n"
+            f"Previous Services:\n{services_text}\n\n"
+            f"What would you like to do?",
+            [
+                {"id": "AUTO_REBOOK", "title": "⚡ Rebook Same (Auto)"},
+                {"id": "CHANGE_SERVICE", "title": "Choose Another Service"},
+                {"id": "NEW_BOOKING", "title": "Book Completely New"}
+            ]
+        )
+
+        if not result:
+            return "⚠️ Service temporarily unavailable. Please try REBOOK again."
+
+        session["state"] = "REBOOK_CONFIRM"
         SESSIONS[user_id] = session
-        return "👤 Please enter your *Full Name*"
+        return ""
 
     if state == "REBOOK_NAME":
         print(f"\n🔍 DEBUG REBOOK PHONE: {data.get('rebook_phone')}")
