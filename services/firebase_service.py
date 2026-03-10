@@ -421,17 +421,33 @@ def find_latest_active_booking_by_customer(
         ref = db.reference(f"salonandspa/appointments/{col}")
         all_bookings = ref.get() or {}
 
-        for salon_id, bookings in all_bookings.items():
+        # Handle both dict {salonId: {bookingId: data}} and list [{bookingId: data}]
+        if isinstance(all_bookings, dict):
+            salon_bookings_items = all_bookings.items()
+        elif isinstance(all_bookings, list):
+            salon_bookings_items = []
+            for idx, val in enumerate(all_bookings):
+                if val: salon_bookings_items.append((str(idx), val))
+        else:
+            continue
+
+        for salon_id, bookings in salon_bookings_items:
+            if not isinstance(bookings, dict):
+                continue
 
             for appointment_id, booking in bookings.items():
+                if not isinstance(booking, dict):
+                    continue
 
                 if booking.get("status") != "confirmed":
                     continue
 
                 customer = booking.get("customer", {})
+                customer_name = str(customer.get("name", "")).lower()
+                search_name = name.lower()
 
                 if customer.get("phone") == phone and \
-                   customer.get("name", "").lower() == name.lower():
+                   (search_name == customer_name or search_name in customer_name):
 
                     created = booking.get("createdAt", 0)
 
@@ -663,9 +679,22 @@ def get_customer_active_bookings(phone):
         ref = db.reference(f"salonandspa/appointments/{col}")
         data = ref.get() or {}
 
-        for salon_id, bookings in data.items():
+        if isinstance(data, dict):
+            salon_items = data.items()
+        elif isinstance(data, list):
+            salon_items = []
+            for idx, val in enumerate(data):
+                if val: salon_items.append((str(idx), val))
+        else:
+            continue
+
+        for salon_id, bookings in salon_items:
+            if not isinstance(bookings, dict):
+                continue
 
             for appointment_id, booking in bookings.items():
+                if not isinstance(booking, dict):
+                    continue
 
                 if booking.get("status") != "confirmed":
                     continue

@@ -888,10 +888,15 @@ def handle_conversation(user_id, message):
         return "👤 Please enter your *Full Name*"
 
     if state == "REBOOK_NAME":
+        print(f"\n🔍 DEBUG REBOOK PHONE: {data.get('rebook_phone')}")
+        print(f"🔍 DEBUG REBOOK NAME: {msg}")
+
         booking = find_latest_active_booking_by_customer(
             phone=data["rebook_phone"],
             name=msg
         )
+
+        print(f"🔍 BOOKING RESULT FOUND: {True if booking else False}")
 
         if not booking:
             return "❌ No previous booking found for this name and phone."
@@ -910,7 +915,7 @@ def handle_conversation(user_id, message):
             f"• {s['serviceName']}" for s in data["selected_services"]
         )
 
-        send_whatsapp_buttons(
+        result = send_whatsapp_buttons(
             user_id,
             f"🔁 *Rebook Last Appointment*\n\n"
             f"Previous Services:\n{services_text}\n\n"
@@ -921,6 +926,9 @@ def handle_conversation(user_id, message):
                 {"id": "NEW_BOOKING", "title": "Book Completely New"}
             ]
         )
+
+        if not result:
+            return "⚠️ Service temporarily unavailable. Please try REBOOK again."
 
         session["state"] = "REBOOK_CONFIRM"
         SESSIONS[user_id] = session
