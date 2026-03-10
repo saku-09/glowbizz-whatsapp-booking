@@ -118,14 +118,32 @@ def get_booked_slots_from_salon_node(salon_id, date, collection="salons"):
 # CHECK SLOT AVAILABILITY (PREVENT DOUBLE BOOKING)
 # ============================================
 
-def is_slot_available(salon_id, date, start_time, duration=30, collection="salons"):
+def is_slot_available(salon_id, date, start_time, duration=30, collection="salons", booked_slots=None):
 
     date = normalize_date(date)
 
-    booked_slots = get_booked_slots_from_salon_node(salon_id, date, collection=collection)
+    # Strict past-time enforcement for today
+    now = datetime.now()
+    if date == now.strftime("%d-%m-%Y"):
+        try:
+            s_time_dt = datetime.strptime(start_time, "%H:%M").replace(
+                year=now.year, month=now.month, day=now.day, second=0, microsecond=0
+            )
+            if s_time_dt <= now:
+                print(f"🚫 Slot {start_time} is in the past.")
+                return False
+        except:
+            pass
+
+    if booked_slots is None:
+        booked_slots = get_booked_slots_from_salon_node(salon_id, date, collection=collection)
 
     new_start = datetime.strptime(start_time, "%H:%M")
-    new_end = new_start + timedelta(minutes=duration)
+    
+    # User requirement: slots must be half hour apart and 15 min services should block the whole slot
+    # So we ensure we block at least 30 minutes for any check.
+    slot_interval = 30 
+    new_end = new_start + timedelta(minutes=max(duration, slot_interval))
 
     for slot in booked_slots:
         
@@ -138,9 +156,52 @@ def is_slot_available(salon_id, date, start_time, duration=30, collection="salon
 
     return True
 
-# ============================================
-# CREATE CUSTOMER
-# ============================================
+def get_available_slots(salon_id, date, collection="salons"):
+    """
+    Returns available HH:MM slots at 30-min intervals.
+    Generates potential slots and filters them using is_slot_available.
+    All logic (past-time checks, 30-min blocking) is handled in one backend call.
+    """
+    date = normalize_date(date)
+    dt = datetime.strptime(date, "%d-%m-%Y")
+    day_name = dt.strftime("%A").lower()
+
+    timings = get_salon_timings(salon_id, day_name, collection=collection)
+    if not timings or not timings.get("isOpen"):
+        return []
+
+    # Potential slots at 30-minute intervals
+    slot_interval = 30
+    open_time = timings["open"]
+    close_time = timings["close"]
+    
+    potential_slots = []
+    try:
+        start_curr = datetime.strptime(open_time, "%H:%M")
+        end_limit = datetime.strptime(close_time, "%H:%M")
+        while start_curr + timedelta(minutes=slot_interval) <= end_limit:
+            potential_slots.append(start_curr.strftime("%H:%M"))
+            start_curr += timedelta(minutes=slot_interval)
+    except:
+        return []
+
+    booked = get_booked_slots_from_salon_node(salon_id, date, collection=collection)
+    
+    # Filter through is_slot_available (all checks: past-time & overlap)
+    free_slots = []
+    for slot_start in potential_slots:
+        # We pass duration=30 because slots are 30 min apart
+        if is_slot_available(
+            salon_id, 
+            date, 
+            slot_start, 
+            duration=30, 
+            collection=collection, 
+            booked_slots=booked
+        ):
+            free_slots.append(slot_start)
+
+    return free_slots
 
 def create_customer(customer):
 

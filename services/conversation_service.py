@@ -11,6 +11,7 @@ from services.firebase_service import (
     save_whatsapp_booking,
     get_salon_timings,
     get_booked_slots_from_salon_node,
+    is_slot_available,
     cancel_appointment_and_cleanup,
     find_latest_active_booking_by_customer,
     find_owner_uid_by_salon
@@ -434,53 +435,14 @@ def handle_conversation(user_id, message):
         service = data["service"]
 
         dt = datetime.strptime(msg, "%d-%m-%Y")
-        day_name = dt.strftime("%A").lower()
-
         collection = data.get("collection", "salons")
 
-        timings = get_salon_timings(salon["id"], day_name, collection=collection)
-
-        if not timings or not timings.get("isOpen"):
-            return "❌ Salon is closed that day. Please choose another date."
-
-        duration = int(service.get("duration", 30))
-
-        slots = generate_slots_by_duration(
-            timings["open"],
-            timings["close"],
-            duration
-        )
-
-        booked = get_booked_slots_from_salon_node(
+        # ✅ Backend-driven slot generation & filtering in one call
+        free_slots = get_available_slots(
             salon["id"],
             msg,
             collection=collection
         )
-
-        free_slots = []
-
-        for slot_start in slots:
-
-            is_overlap = False
-            s_dt = datetime.strptime(slot_start, "%H:%M")
-            s_end_dt = s_dt + timedelta(minutes=duration)
-
-            for b in booked:
-                start = b.get("start") or b.get("startTime")
-                end = b.get("end") or b.get("endTime")
-
-                if not start or not end:
-                    continue
-
-                b_start_dt = datetime.strptime(start, "%H:%M")
-                b_end_dt = datetime.strptime(end, "%H:%M")
-
-                if s_dt < b_end_dt and b_start_dt < s_end_dt:
-                    is_overlap = True
-                    break
-
-            if not is_overlap:
-                free_slots.append(slot_start)
 
         # ❌ NO SLOTS
         if not free_slots:
