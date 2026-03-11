@@ -1,10 +1,8 @@
 import os
 import time
-import threading
 from datetime import datetime, timedelta
 
-# global lock is simpler and safe — booking confirmations are rare events.
-_booking_lock = threading.Lock()
+# global lock removed to support high concurrency
 
 def normalize_phone(p):
     """Returns last 10 digits of a phone number for robust comparison."""
@@ -324,8 +322,13 @@ def save_booked_slot(salon_id, booking, appointment_id, collection="salons"):
 
     end = start + timedelta(minutes=booking["totalDuration"])
 
-    slot_ref.push({
+    slots = slot_ref.get() or {}
 
+    for s in slots.values():
+        if s.get("employeeId") == booking["employeeId"] and s.get("startTime") == booking["startTime"]:
+            raise Exception("Slot already booked")
+
+    slot_ref.push({
         "appointmentId": appointment_id,
         "employeeId": booking["employeeId"],
         "serviceIds": [s["serviceId"] for s in booking["services"]],
@@ -342,68 +345,67 @@ def save_booked_slot(salon_id, booking, appointment_id, collection="salons"):
 
 def save_whatsapp_booking(salon_id, booking_data, collection="salon"):
     
-    with _booking_lock:
-        # ── ATOMIC: check + save under one lock so two users can't grab the same slot ──
-        print("🔥 COLLECTION USED:", collection)
-        print("🔥 APPOINTMENT PATH:", f"salonandspa/appointments/{collection}/{salon_id}")
-        
-        collection_plural = f"{collection}s"
-        
-        if not any(
-            str(emp["employeeId"]) == str(booking_data.get("employeeId"))
-            for emp in get_available_employees_for_slot(
-                salon_id,
-                booking_data["date"],
-                booking_data["startTime"],
-                duration=booking_data.get("totalDuration", 30),
-                collection=collection_plural
-            )
-        ):
-            return {
-                "success": False,
-                "message": "⚠️ This staff member was just booked. Please choose another slot."
-            }
-
-        ref = db.reference(
-            f"salonandspa/appointments/{collection}/{salon_id}"
-        )
-
-        booking = {
-            "appointmentId": "",
-            "createdAt": int(time.time()*1000),
-            "customer": booking_data["customer"],
-
-            "placeId": salon_id,
-            "salonName": booking_data.get("salonName"),
-
-            "employeeId": booking_data["employeeId"],
-            "services": booking_data["services"],
-
-            "date": normalize_date(booking_data["date"]),
-            "startTime": booking_data["startTime"],
-
-            "totalAmount": booking_data.get("totalAmount", 0),
-            "totalDuration": booking_data.get("totalDuration", 30),
-
-            "status": "confirmed",
-            "mode": "whatsapp",
-            "ownerUid": booking_data.get("ownerUid")
-        }
-
-        new_ref = ref.push()
-
-        booking["appointmentId"] = new_ref.key
-
-        new_ref.set(booking)
-
-        save_booked_slot(
+    # ── Removed lock to support high concurrency ──
+    print("🔥 COLLECTION USED:", collection)
+    print("🔥 APPOINTMENT PATH:", f"salonandspa/appointments/{collection}/{salon_id}")
+    
+    collection_plural = f"{collection}s"
+    
+    if not any(
+        str(emp["employeeId"]) == str(booking_data.get("employeeId"))
+        for emp in get_available_employees_for_slot(
             salon_id,
-            booking,
-            new_ref.key,
+            booking_data["date"],
+            booking_data["startTime"],
+            duration=booking_data.get("totalDuration", 30),
             collection=collection_plural
         )
+    ):
+        return {
+            "success": False,
+            "message": "⚠️ This staff member was just booked. Please choose another slot."
+        }
 
-        return new_ref.key
+    ref = db.reference(
+        f"salonandspa/appointments/{collection}/{salon_id}"
+    )
+
+    booking = {
+        "appointmentId": "",
+        "createdAt": int(time.time()*1000),
+        "customer": booking_data["customer"],
+
+        "placeId": salon_id,
+        "salonName": booking_data.get("salonName"),
+
+        "employeeId": booking_data["employeeId"],
+        "services": booking_data["services"],
+
+        "date": normalize_date(booking_data["date"]),
+        "startTime": booking_data["startTime"],
+
+        "totalAmount": booking_data.get("totalAmount", 0),
+        "totalDuration": booking_data.get("totalDuration", 30),
+
+        "status": "confirmed",
+        "mode": "whatsapp",
+        "ownerUid": booking_data.get("ownerUid")
+    }
+
+    new_ref = ref.push()
+
+    booking["appointmentId"] = new_ref.key
+
+    new_ref.set(booking)
+
+    save_booked_slot(
+        salon_id,
+        booking,
+        new_ref.key,
+        collection=collection_plural
+    )
+
+    return new_ref.key
 
 
 # ============================================
@@ -491,6 +493,106 @@ def find_latest_active_booking_by_customer(
                     continue
 
                 if booking.get("status") != "confirmed":
+                    continue
+
+                customer = booking.get("customer")
+                if not isinstance(customer, dict): continue
+                
+                db_phone = normalize_phone(customer.get("phone"))
+                customer_name = str(customer.get("name", "")).lower()
+
+                # Match phone and (optionally) name
+                phone_matches = (db_phone == search_phone)
+                name_matches = True
+                if search_name:
+                    name_matches = (search_name in customer_name or customer_name in search_name)
+
+                if phone_matches and name_matches:
+
+                    created = booking.get("createdAt", 0)
+
+                    if created > latest_time:
+
+                        latest_time = created
+
+                        latest = {
+                            "appointmentId": appointment_id,
+                            "salonId": salon_id,
+                            "ownerUid": booking.get("ownerUid"),
+                            "date": booking.get("date"),
+                            "startTime": booking.get("startTime"),
+                            "salonName": booking.get("salonName"),
+                            "services": booking.get("services") or [],
+                            "serviceName": (booking.get("services") or [{}])[0].get("serviceName", "Service"),
+                            "customer": customer,
+                            "customerName": customer.get("name"),
+                            "customerPhone": customer.get("phone"),
+                            "collection": col,
+                            "totalDuration": booking.get("totalDuration", 30)
+                        }
+
+    return latest
+
+
+def find_latest_past_booking_by_customer(
+        phone,
+        name=None
+):
+    search_phone = normalize_phone(phone)
+    search_name = name.lower() if name else None
+
+    latest = None
+    latest_time = 0
+    collections = ["salon", "spa"]
+    
+    utc_now = datetime.utcnow()
+    ist_now = utc_now + timedelta(hours=5, minutes=30)
+    today = ist_now.date()
+
+    for col in collections:
+        
+        ref = db.reference(f"salonandspa/appointments/{col}")
+        all_bookings = ref.get() or {}
+
+        # Handle both dict {salonId: {bookingId: data}} and list [{bookingId: data}]
+        if isinstance(all_bookings, dict):
+            salon_bookings_items = all_bookings.items()
+        elif isinstance(all_bookings, list):
+            salon_bookings_items = []
+            for idx, val in enumerate(all_bookings):
+                if val: salon_bookings_items.append((str(idx), val))
+        else:
+            continue
+
+        for salon_id, bookings in salon_bookings_items:
+            # Robust conversion of bookings node to dict
+            if isinstance(bookings, list):
+                temp = {}
+                for idx, b in enumerate(bookings):
+                    if b: temp[str(idx)] = b
+                bookings = temp
+                
+            if not isinstance(bookings, dict):
+                continue
+
+            for appointment_id, booking in bookings.items():
+                if not isinstance(booking, dict):
+                    continue
+
+                if booking.get("status") != "confirmed":
+                    continue
+
+                # ❌ Filter out today's and future bookings here
+                b_date = booking.get("date")
+                b_time = booking.get("startTime")
+                if not b_date or not b_time:
+                    continue
+                
+                try:
+                    booking_dt = datetime.strptime(f"{b_date} {b_time}", "%d-%m-%Y %H:%M")
+                    if booking_dt.date() >= today:
+                        continue # Only keep past bookings
+                except:
                     continue
 
                 customer = booking.get("customer")

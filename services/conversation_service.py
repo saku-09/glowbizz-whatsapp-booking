@@ -16,6 +16,7 @@ from services.firebase_service import (
     get_available_employees_for_slot,
     cancel_appointment_and_cleanup,
     find_latest_active_booking_by_customer,
+    find_latest_past_booking_by_customer,
     find_owner_uid_by_salon,
     get_customer_active_bookings,
     normalize_phone
@@ -93,10 +94,8 @@ def auto_assign_employee(employees, time_slot):
     if not employees:
         return None
 
-    # Load balancing using time slot hash
-    index = abs(hash(time_slot)) % len(employees)
-
-    return employees[index]
+    import random
+    return random.choice(employees)
 
 
 # ==================================================
@@ -226,6 +225,18 @@ def handle_conversation(user_id, message):
 
     msg = message.strip()
     msg_upper = msg.upper()
+
+    BUTTON_NORMALIZER = {
+        "MY BOOKINGS": "MY_BOOKINGS",
+        "REBOOK LAST": "REBOOK",
+        "BOOK APPOINTMENT": "BOOK",
+        "MORE OPTIONS": "MORE_MENU",
+        "CANCEL APPOINTMENT": "CANCEL"
+    }
+
+    if msg_upper in BUTTON_NORMALIZER:
+        msg_upper = BUTTON_NORMALIZER[msg_upper]
+
     msg_lower = msg.lower()
 
     print("MESSAGE RECEIVED:", msg)
@@ -248,7 +259,7 @@ def handle_conversation(user_id, message):
         "MORE_MENU": "MAIN_MENU"
     }
 
-    if msg_upper in DIRECT_COMMAND_MAP:
+    if msg_upper in DIRECT_COMMAND_MAP and state in ["MAIN_MENU", "START"]:
         target_state = DIRECT_COMMAND_MAP[msg_upper]
         session["data"] = {} # Reset data for new flow
         
@@ -375,49 +386,64 @@ def handle_conversation(user_id, message):
 
             # ⚡ 1-CLICK REBOOK IMPROVEMENT
             print(f"⚡ ATTEMPTING 1-CLICK REBOOK FOR {user_id}")
-            booking = find_latest_active_booking_by_customer(phone=user_id)            
-            if booking:
-                data["last_booking"] = booking
-                services = booking.get("services", [])
-                
-                # Fix Firebase dict structure
-                if isinstance(services, dict):
-                    services = list(services.values())
-                
-                data["selected_services"] = services
-                data["salon"] = {"id": booking["salonId"], "name": booking["salonName"]}
-                data["is_rebook"] = True
-                data["collection"] = f"{booking.get('collection', 'salon')}s"
-                data["business_type"] = booking.get('collection', 'salon')
+            booking = find_latest_past_booking_by_customer(phone=user_id)            
+            
+            if not booking:
+                return "❌ No previous appointment found for rebooking."
 
-                services_text_items = []
-                for s in services:
-                    if isinstance(s, dict) and s.get("serviceName"):
-                        services_text_items.append(f"• {s['serviceName']}")
-                    elif isinstance(s, str):
-                        services_text_items.append(f"• {s}")
-                
-                services_text = "\n".join(services_text_items) if services_text_items else "No services"
-
-                send_whatsapp_buttons(
-                    user_id,
-                    f"🔁 *Rebook Last Appointment*\n\n"
-                    f"Previous Services:\n{services_text}\n\n"
-                    f"What would you like to do?",
-                    [
-                        {"id": "AUTO_REBOOK", "title": "⚡ Quick Rebook"},
-                        {"id": "CHANGE_SERVICE", "title": "Change Service"},
-                        {"id": "NEW_BOOKING", "title": "New Booking"}
-                    ]
+            try:
+                booking_datetime = datetime.strptime(
+                    f"{booking['date']} {booking['startTime']}",
+                    "%d-%m-%Y %H:%M"
                 )
-                session["state"] = "REBOOK_CONFIRM"
-                SESSIONS[user_id] = session
-                return ""
+                utc_now = datetime.utcnow()
+                ist_now = utc_now + timedelta(hours=5, minutes=30)
+                today = ist_now.date()
 
-            # Fallback if no booking found for WhatsApp number
-            session["state"] = "REBOOK_PHONE"
+                # allow only past appointments
+                if booking_datetime.date() >= today:
+                    return "❌ Rebooking is only available for previous day appointments."
+
+            except Exception as e:
+                print("REBOOK DATE ERROR:", e)
+                return "⚠️ Unable to verify your last appointment."
+
+            data["last_booking"] = booking
+            services = booking.get("services", [])
+            
+            # Fix Firebase dict structure
+            if isinstance(services, dict):
+                services = list(services.values())
+            
+            data["selected_services"] = services
+            data["salon"] = {"id": booking["salonId"], "name": booking["salonName"]}
+            data["is_rebook"] = True
+            data["collection"] = f"{booking.get('collection', 'salon')}s"
+            data["business_type"] = booking.get('collection', 'salon')
+
+            services_text_items = []
+            for s in services:
+                if isinstance(s, dict) and s.get("serviceName"):
+                    services_text_items.append(f"• {s['serviceName']}")
+                elif isinstance(s, str):
+                    services_text_items.append(f"• {s}")
+            
+            services_text = "\n".join(services_text_items) if services_text_items else "No services"
+
+            send_whatsapp_buttons(
+                user_id,
+                f"🔁 *Rebook Last Appointment*\n\n"
+                f"Previous Services:\n{services_text}\n\n"
+                f"What would you like to do?",
+                [
+                    {"id": "AUTO_REBOOK", "title": "⚡ Quick Rebook"},
+                    {"id": "CHANGE_SERVICE", "title": "Change Service"},
+                    {"id": "NEW_BOOKING", "title": "New Booking"}
+                ]
+            )
+            session["state"] = "REBOOK_CONFIRM"
             SESSIONS[user_id] = session
-            return "📱 Please enter your registered phone number to find your last booking"
+            return ""
 
         elif msg_upper in ["RESCHEDULE", "RESCHEDULE APPOINTMENT"]:
 
@@ -970,6 +996,19 @@ def handle_conversation(user_id, message):
                 "ownerUid": owner_uid
             }
 
+            # 🛡️ FINAL CONFIRMATION CHECK
+            collection_plural = f"{business_type}s"
+            still_free = get_available_employees_for_slot(
+                salon["id"],
+                data["date"],
+                data["time"],
+                duration=total_duration,
+                collection=collection_plural
+            )
+            
+            if not any(str(emp["employeeId"]) == str(employee["employeeId"]) for emp in still_free):
+                return "⚠️ This slot was just booked. Please choose another time."
+
             result = save_whatsapp_booking(salon["id"], booking, collection=business_type)
 
             if isinstance(result, dict) and result.get("success") == False:
@@ -1065,7 +1104,7 @@ def handle_conversation(user_id, message):
     if state == "REBOOK_PHONE":
         print(f"\n🔍 DEBUG REBOOK PHONE: {msg}")
         
-        booking = find_latest_active_booking_by_customer(
+        booking = find_latest_past_booking_by_customer(
             phone=msg
         )
 
@@ -1291,7 +1330,7 @@ def handle_conversation(user_id, message):
         data["reschedule_phone"] = msg
         session["state"] = "RESCHEDULE_NAME"
         SESSIONS[user_id] = session
-        return "👤 Please enter the *Full Name* used for booking."
+        return "👤 Please enter the Name used for booking."
 
     if state == "RESCHEDULE_NAME":
         booking = find_latest_active_booking_by_customer(
@@ -1429,6 +1468,18 @@ def handle_conversation(user_id, message):
             "status": "confirmed",
             "ownerUid": owner_uid
         }
+
+        # 🛡️ FINAL CONFIRMATION CHECK
+        still_free = get_available_employees_for_slot(
+            booking["salonId"],
+            data["reschedule_date"],
+            msg,
+            duration=total_duration,
+            collection=collection_plural
+        )
+        
+        if not any(str(emp["employeeId"]) == str(employee["employeeId"]) for emp in still_free):
+            return "⚠️ This slot was just booked. Please choose another time."
 
         result = save_whatsapp_booking(
             booking["salonId"],
