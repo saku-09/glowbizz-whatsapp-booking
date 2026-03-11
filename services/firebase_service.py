@@ -241,7 +241,7 @@ def find_customer_by_phone(phone):
         return None
 
     for cid, c in customers_data.items():
-        if isinstance(c, dict) and c.get("phone") == phone:
+        if isinstance(c, dict) and normalize_phone(c.get("phone")) == normalize_phone(phone):
             return cid
 
     return None
@@ -649,7 +649,7 @@ def get_services_by_salon(salon_id, collection="salons"):
         return results
     except Exception as e:
         print(f"❌ Error in get_services_by_salon: {e}")
-        return []
+    return []
 
 
 # ============================================
@@ -723,7 +723,7 @@ def get_customer_active_bookings(phone):
 
                 customer = booking.get("customer", {})
 
-                if customer.get("phone") != phone:
+                if normalize_phone(customer.get("phone")) != normalize_phone(phone):
                     continue
 
                 results.append({
@@ -744,7 +744,8 @@ def get_customer_active_bookings(phone):
 # ============================================
 def get_appointments_for_reminder():
 
-    now = datetime.now()
+    utc_now = datetime.utcnow()
+    now = utc_now + timedelta(hours=5, minutes=30)
     collections = ["salon", "spa"]
     results = []
 
@@ -753,13 +754,13 @@ def get_appointments_for_reminder():
         ref = db.reference(f"salonandspa/appointments/{col}")
         data = ref.get() or {}
 
-        for salon_id, bookings in data.items():
+        for salon_id, bookings in (data or {}).items():
 
             for appointment_id, booking in bookings.items():
 
                 status = booking.get("status")
 
-                if status not in ["confirmed", "booked"]:
+                if status not in ["confirmed", "booked"]: 
                     continue
 
                 if booking.get("reminderSent"):

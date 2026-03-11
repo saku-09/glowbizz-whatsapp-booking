@@ -300,9 +300,50 @@ def handle_conversation(user_id, message):
 
         elif msg_upper in ["REBOOK", "REBOOK LAST", "REBOOK LAST APPOINTMENT"]:
 
+            # ⚡ 1-CLICK REBOOK IMPROVEMENT
+            print(f"⚡ ATTEMPTING 1-CLICK REBOOK FOR {user_id}")
+            booking = find_latest_active_booking_by_customer(phone=user_id)            
+            if booking:
+                data["last_booking"] = booking
+                services = booking.get("services", [])
+                
+                # Fix Firebase dict structure
+                if isinstance(services, dict):
+                    services = list(services.values())
+                
+                data["selected_services"] = services
+                data["salon"] = {"id": booking["salonId"], "name": booking["salonName"]}
+                data["is_rebook"] = True
+                data["collection"] = f"{booking.get('collection', 'salon')}s"
+                data["business_type"] = booking.get('collection', 'salon')
+
+                services_text_items = []
+                for s in services:
+                    if isinstance(s, dict) and s.get("serviceName"):
+                        services_text_items.append(f"• {s['serviceName']}")
+                    elif isinstance(s, str):
+                        services_text_items.append(f"• {s}")
+                
+                services_text = "\n".join(services_text_items) if services_text_items else "No services"
+
+                send_whatsapp_buttons(
+                    user_id,
+                    f"🔁 *Rebook Last Appointment*\n\n"
+                    f"Previous Services:\n{services_text}\n\n"
+                    f"What would you like to do?",
+                    [
+                        {"id": "AUTO_REBOOK", "title": "⚡ Rebook Same (Auto)"},
+                        {"id": "CHANGE_SERVICE", "title": "Choose Another Service"},
+                        {"id": "NEW_BOOKING", "title": "Book Completely New"}
+                    ]
+                )
+                session["state"] = "REBOOK_CONFIRM"
+                SESSIONS[user_id] = session
+                return ""
+
+            # Fallback if no booking found for WhatsApp number
             session["state"] = "REBOOK_PHONE"
             SESSIONS[user_id] = session
-
             return "📱 Please enter your registered phone number to find your last booking"
 
         elif msg_upper in ["RESCHEDULE", "RESCHEDULE APPOINTMENT"]:
@@ -894,7 +935,12 @@ def handle_conversation(user_id, message):
             return "❌ No previous booking found for this phone number."
 
         data["last_booking"] = booking
-        data["selected_services"] = booking.get("services", [])
+        services = booking.get("services", [])
+
+        if isinstance(services, dict):
+            services = list(services.values())
+
+        data["selected_services"] = services
         data["salon"] = {"id": booking["salonId"], "name": booking["salonName"]}
         
         data["is_rebook"] = True  # Flag to skip personal questions later
@@ -947,7 +993,13 @@ def handle_conversation(user_id, message):
             return "❌ No previous booking found for this name and phone."
 
         data["last_booking"] = booking
-        data["selected_services"] = booking.get("services", [])
+        services = booking.get("services", [])
+
+        # Fix Firebase dict structure
+        if isinstance(services, dict):
+            services = list(services.values())
+
+        data["selected_services"] = services
         data["salon"] = {"id": booking["salonId"], "name": booking["salonName"]}
         
         data["is_rebook"] = True  # Flag to skip personal questions later
@@ -987,7 +1039,13 @@ def handle_conversation(user_id, message):
             booking = data["last_booking"]
             salon_id = booking["salonId"]
             collection = f"{booking.get('collection','salon')}s"
+            
             services = booking.get("services", [])
+
+            # Fix Firebase dict structure
+            if isinstance(services, dict):
+                services = list(services.values())
+
             duration = int(booking.get("totalDuration", 30))
 
             # check next 7 days automatically
@@ -1019,8 +1077,18 @@ def handle_conversation(user_id, message):
             data["gender"] = booking.get("customer", {}).get("gender", "Other")
             data["age"] = booking.get("customer", {}).get("age", "")
 
-            services_text = "\n".join([f"• {s['serviceName']}" for s in services])
-            total_amount = sum(int(s.get("price", 0)) for s in services)
+            services_text_items = []
+            for s in services:
+                if isinstance(s, dict) and s.get("serviceName"):
+                    services_text_items.append(f"• {s['serviceName']}")
+                elif isinstance(s, str):
+                    services_text_items.append(f"• {s}")
+            
+            services_text = "\n".join(services_text_items) if services_text_items else "No services"
+            total_amount = 0
+            for s in services:
+                if isinstance(s, dict):
+                    total_amount += int(s.get("price", 0))
 
             summary = (
                 "⚡ *Auto Slot Found*\n\n"
