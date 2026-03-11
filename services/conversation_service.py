@@ -250,75 +250,55 @@ def handle_conversation(user_id, message):
 
     if msg_upper in DIRECT_COMMAND_MAP:
         target_state = DIRECT_COMMAND_MAP[msg_upper]
+        session["data"] = {} # Reset data for new flow
         
-        # ⚡ 1-TAP "MY_BOOKINGS" PROACTIVE CHECK
-        if msg_upper == "MY_BOOKINGS":
+        # ⚡ Management Flows (Proactive Lookup)
+        if msg_upper in ["CANCEL", "RESCHEDULE", "MY_BOOKINGS"]:
             phone = normalize_phone(user_id)
-            bookings = get_customer_active_bookings(phone)
-            if bookings:
-                session["state"] = "MY_BOOKINGS_PHONE"
-                session["data"] = {}
+            has_booking = False
+            
+            if msg_upper == "MY_BOOKINGS":
+                bookings = get_customer_active_bookings(phone)
+                if bookings: has_booking = True
+            else:
+                booking = find_latest_active_booking_by_customer(phone=phone)
+                if booking: has_booking = True
+
+            if has_booking:
+                session["state"] = target_state
                 SESSIONS[user_id] = session
+                # Safe recursion (phone number is not a command keyword)
                 return handle_conversation(user_id, phone)
             
-            session["state"] = "MY_BOOKINGS_PHONE"
-            session["data"] = {}
+            # Fallback to manual entry prompt
+            session["state"] = target_state
             SESSIONS[user_id] = session
-            return "📱 Please enter your phone number to view your appointments"
+            prompts = {
+                "CANCEL": "Please enter your registered phone number to find your booking:",
+                "RESCHEDULE": "📱 Please enter the phone number you used for your booking:",
+                "MY_BOOKINGS": "📱 Please enter your phone number to view your appointments:"
+            }
+            return prompts.get(msg_upper, "Please enter your phone number:")
 
-        # ⚡ 1-TAP "RESCHEDULE" PROACTIVE CHECK
-        if msg_upper == "RESCHEDULE":
-            phone = normalize_phone(user_id)
-            booking = find_latest_active_booking_by_customer(phone=phone)
-            if booking:
-                session["state"] = "RESCHEDULE_PHONE"
-                session["data"] = {}
-                SESSIONS[user_id] = session
-                return handle_conversation(user_id, phone)
-            
-            session["state"] = "RESCHEDULE_PHONE"
-            session["data"] = {}
-            SESSIONS[user_id] = session
-            return "📱 Please enter the phone number used for booking."
-
-        # ⚡ 1-TAP "CANCEL" PROACTIVE CHECK
-        if msg_upper == "CANCEL":
-            phone = normalize_phone(user_id)
-            booking = find_latest_active_booking_by_customer(phone=phone)
-            if booking:
-                session["state"] = "CANCEL_PHONE"
-                session["data"] = {}
-                SESSIONS[user_id] = session
-                return handle_conversation(user_id, phone)
-            
-            session["state"] = "CANCEL_PHONE"
-            session["data"] = {}
-            SESSIONS[user_id] = session
-            return "Please enter your registered phone number"
-
-        # ⚡ OTHER COMMANDS
+        # ⚡ Direct Navigation (BOOK)
         if msg_upper == "BOOK":
             session["state"] = "CITY"
-            session["data"] = {}
             SESSIONS[user_id] = session
             return "📍 Please enter your City"
 
-        if msg_upper == "REBOOK":
+        # ⚡ Menu Navigation (Fallthrough)
+        if msg_upper in ["REBOOK", "MORE_MENU"]:
+            # Set state and message to fall through to the MAIN_MENU block below
+            state = "MAIN_MENU"
+            msg = msg_upper
+            msg_upper = msg_upper
             session["state"] = "MAIN_MENU"
-            session["data"] = {}
             SESSIONS[user_id] = session
-            return handle_conversation(user_id, "REBOOK")
-
-        if msg_upper == "MORE_MENU":
-            session["state"] = "MAIN_MENU"
-            session["data"] = {}
+        else:
+            # For any other command, set state and return empty to let the engine handle it
+            session["state"] = target_state
             SESSIONS[user_id] = session
-            return handle_conversation(user_id, "MORE_MENU")
-
-        session["state"] = target_state
-        session["data"] = {}
-        SESSIONS[user_id] = session
-        return ""
+            return ""
 
     if msg_upper in RESTART_KEYWORDS:
 
@@ -330,7 +310,7 @@ def handle_conversation(user_id, message):
             "✨ *Welcome to NexSalon* ✨\n\nYour personal salon booking assistant 💇‍♀️\n\nChoose an option below 👇",
             [
                 {"id": "BOOK", "title": "Book Appointment"},
-                {"id": "MY_BOOKINGS", "title": "My Bookings"},
+                {"id": "CANCEL", "title": "Cancel Appointment"},
                 {"id": "MORE_MENU", "title": "More Options"}
             ]
         )
@@ -355,7 +335,7 @@ def handle_conversation(user_id, message):
             "✨ *Welcome to NexSalon* ✨\n\nYour personal salon booking assistant 💇‍♀️\n\nChoose an option below 👇",
             [
                 {"id": "BOOK", "title": "Book Appointment"},
-                {"id": "MY_BOOKINGS", "title": "My Bookings"},
+                {"id": "CANCEL", "title": "Cancel Appointment"},
                 {"id": "MORE_MENU", "title": "More Options"}
             ]
         )
@@ -377,9 +357,9 @@ def handle_conversation(user_id, message):
                 user_id,
                 "More options 👇",
                 [
+                    {"id": "MY_BOOKINGS", "title": "My Bookings"},
                     {"id": "REBOOK", "title": "Rebook Last"},
-                    {"id": "RESCHEDULE", "title": "Reschedule"},
-                    {"id": "CANCEL", "title": "Cancel"}
+                    {"id": "RESCHEDULE", "title": "Reschedule"}
                 ]
             )
             return ""
