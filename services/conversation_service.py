@@ -226,6 +226,8 @@ def handle_conversation(user_id, message):
     msg = message.strip()
     msg_upper = msg.upper()
 
+    msg_upper = msg.upper().strip()
+    
     BUTTON_NORMALIZER = {
         "MY BOOKINGS": "MY_BOOKINGS",
         "REBOOK LAST": "REBOOK",
@@ -233,16 +235,13 @@ def handle_conversation(user_id, message):
         "MORE OPTIONS": "MORE_MENU",
         "CANCEL APPOINTMENT": "CANCEL",
         "QUICK REBOOK": "AUTO_REBOOK",
-        "⚡ QUICK REBOOK": "AUTO_REBOOK",
         "CHANGE SERVICE": "CHANGE_SERVICE",
         "NEW BOOKING": "NEW_BOOKING"
     }
 
-    msg_upper = msg_upper.strip()
-
-    for key, value in BUTTON_NORMALIZER.items():
+    for key in BUTTON_NORMALIZER:
         if key in msg_upper:
-            msg_upper = value
+            msg_upper = BUTTON_NORMALIZER[key]
             break
 
     msg_lower = msg.lower()
@@ -394,7 +393,7 @@ def handle_conversation(user_id, message):
 
             # ⚡ 1-CLICK REBOOK IMPROVEMENT
             print(f"⚡ ATTEMPTING 1-CLICK REBOOK FOR {user_id}")
-            booking = find_latest_past_booking_by_customer(phone=user_id)            
+            booking = find_latest_past_booking_by_customer(phone=normalize_phone(user_id))
             
             if not booking:
                 return "❌ No previous appointment found for rebooking."
@@ -1205,9 +1204,9 @@ def handle_conversation(user_id, message):
             f"Previous Services:\n{services_text}\n\n"
             f"What would you like to do?",
             [
-                {"id": "AUTO_REBOOK", "title": "⚡ Rebook Same (Auto)"},
-                {"id": "CHANGE_SERVICE", "title": "Choose Another Service"},
-                {"id": "NEW_BOOKING", "title": "Book Completely New"}
+                {"id": "AUTO_REBOOK", "title": "⚡ Quick Rebook"},
+                {"id": "CHANGE_SERVICE", "title": "Change Service"},
+                {"id": "NEW_BOOKING", "title": "New Booking"}
             ]
         )
 
@@ -1239,11 +1238,11 @@ def handle_conversation(user_id, message):
 
             duration = int(booking.get("totalDuration", 30))
 
-            # check next 7 days automatically
+            # check next 3 days automatically
             found_date = None
             found_slot = None
 
-            for i in range(7):
+            for i in range(3):
                 date_str = (datetime.now() + timedelta(days=i)).strftime("%d-%m-%Y")
                 slots = get_available_slots(
                     salon_id,
@@ -1257,7 +1256,7 @@ def handle_conversation(user_id, message):
                     break
 
             if not found_date:
-                return "❌ No slots available in the next 7 days."
+                return "❌ No slots available in the next 3 days."
 
             data["date"] = found_date
             data["time"] = found_slot
