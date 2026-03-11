@@ -112,11 +112,13 @@ def get_booked_slots_from_salon_node(salon_id, date, collection="salons"):
 
             start_time = slot.get("startTime")
             end_time = slot.get("endTime")
+            emp_id = slot.get("employeeId")
 
             if start_time and end_time:
                 booked.append({
                     "start": start_time,
-                    "end": end_time
+                    "end": end_time,
+                    "employeeId": emp_id
                 })
 
     return booked
@@ -125,110 +127,141 @@ def get_booked_slots_from_salon_node(salon_id, date, collection="salons"):
 # CHECK SLOT AVAILABILITY (PREVENT DOUBLE BOOKING)
 # ============================================
 
-def is_slot_available(salon_id, date, start_time, duration=30, collection="salons", booked_slots=None):
-
+def get_available_employees_for_slot(salon_id, date, start_time, duration=30, collection="salons", booked_slots=None, active_employees=None):
+    """
+    Returns a list of employee objects who are FREE for the given time slot.
+    """
     date = normalize_date(date)
 
-    # Strict past-time enforcement for today (IST)
-    # Get current time in IST (UTC+5:30)
+    # 1. Past-time check
     utc_now = datetime.utcnow()
     ist_now = utc_now + timedelta(hours=5, minutes=30)
-    
     today_str = ist_now.strftime("%d-%m-%Y")
 
     if date == today_str:
         try:
             slot_time = datetime.strptime(start_time, "%H:%M").time()
-            current_time = ist_now.time()
-
-            if slot_time <= current_time:
-                # print(f"🚫 Slot {start_time} already passed (IST).")
-                return False
-        except Exception as e:
+            if slot_time <= ist_now.time():
+                return []
+        except:
             pass
+
+    # 2. Get dependencies if not provided
+    if active_employees is None:
+        active_employees = get_employees_by_salon(salon_id, collection=collection)
+    
+    if not active_employees:
+        return []
 
     if booked_slots is None:
         booked_slots = get_booked_slots_from_salon_node(salon_id, date, collection=collection)
 
+    # 3. Calculate interval
     new_start = datetime.strptime(start_time, "%H:%M")
-    
-    # User requirement: slots must be half hour apart and 15 min services should block the whole slot
-    # So we ensure we block at least 30 minutes for any check.
     slot_interval = 30 
     new_end = new_start + timedelta(minutes=max(duration, slot_interval))
 
+    # 4. Identify busy employees
+    busy_emp_ids = set()
     for slot in booked_slots:
-        
         b_start = datetime.strptime(slot["start"], "%H:%M")
         b_end = datetime.strptime(slot["end"], "%H:%M")
-
-        # Overlap check: (start1 < end2) and (start2 < end1)
+        
+        # Overlap check
         if new_start < b_end and b_start < new_end:
-            return False
+            if slot.get("employeeId"):
+                busy_emp_ids.add(str(slot["employeeId"]))
 
-    return True
+    # 5. Return free employees
+    free_employees = [
+        emp for emp in active_employees 
+        if str(emp["employeeId"]) not in busy_emp_ids
+    ]
+
+    return free_employees
+
+def is_slot_available(salon_id, date, start_time, duration=30, collection="salons", booked_slots=None):
+    """Legacy wrapper for backward compatibility or simple boolean checks."""
+    free_emps = get_available_employees_for_slot(
+        salon_id, date, start_time, duration, collection, booked_slots
+    )
+    return len(free_emps) > 0
 
 def get_available_slots(salon_id, date, duration=30, collection="salons"):
     """
     Returns available HH:MM slots at 30-min intervals.
-    Generates potential slots and filters them using is_slot_available.
-    All logic (past-time checks, 30-min blocking) is handled in one backend call.
+    Optimized: Fetches employees and booked slots ONCE and filters in-memory.
     """
     date = normalize_date(date)
     dt = datetime.strptime(date, "%d-%m-%Y")
     day_name = dt.strftime("%A").lower()
 
+    # 1. Fetch all required data once
     timings = get_salon_timings(salon_id, day_name, collection=collection)
     if not timings or not timings.get("isOpen"):
         return []
 
-    # Potential slots at 30-minute intervals
+    active_employees = get_employees_by_salon(salon_id, collection=collection)
+    if not active_employees:
+        return []
+
+    booked = get_booked_slots_from_salon_node(salon_id, date, collection=collection)
+
+    # 2. Potential slots at 30-minute intervals
     slot_interval = 30
     open_time = timings["open"]
     close_time = timings["close"]
     
-    potential_slots = []
+    potential_slots_dt = []
     try:
         start_curr = datetime.strptime(open_time, "%H:%M")
         end_limit = datetime.strptime(close_time, "%H:%M")
         while start_curr + timedelta(minutes=slot_interval) <= end_limit:
-            potential_slots.append(start_curr.strftime("%H:%M"))
+            potential_slots_dt.append(start_curr)
             start_curr += timedelta(minutes=slot_interval)
     except:
         return []
 
-    booked = get_booked_slots_from_salon_node(salon_id, date, collection=collection)
-    
-    # Filter through is_slot_available (all checks: past-time & overlap)
+    # Pre-parse booked slots for faster comparison
+    booked_dt = []
+    for b in booked:
+        try:
+            booked_dt.append({
+                "start": datetime.strptime(b["start"], "%H:%M"),
+                "end": datetime.strptime(b["end"], "%H:%M"),
+                "employeeId": str(b["employeeId"]) if b.get("employeeId") else None
+            })
+        except: continue
+
+    # 3. Filter slots
     free_slots = []
     
+    # Pre-calculate active IDs
+    active_emp_ids = [str(emp["employeeId"]) for emp in active_employees]
+
     utc_now = datetime.utcnow()
     ist_now = utc_now + timedelta(hours=5, minutes=30)
     today_str = ist_now.strftime("%d-%m-%Y")
 
-    for slot_start in potential_slots:
+    for slot_dt in potential_slots_dt:
+        slot_start_str = slot_dt.strftime("%H:%M")
         
-        # Double safe: Pre-filter past slots for today
-        # Double safe: Pre-filter past slots for today (IST)
-        if date == today_str:
-            try:
-                slot_time = datetime.strptime(slot_start, "%H:%M").time()
-                # Use ist_now defined above loop
-                if slot_time <= ist_now.time():
-                    continue
-            except:
-                pass
+        # Past-time check
+        if date == today_str and slot_dt.time() <= ist_now.time():
+            continue
 
-        # We pass the requested duration to check for continuous availability
-        if is_slot_available(
-            salon_id, 
-            date, 
-            slot_start, 
-            duration=duration, 
-            collection=collection, 
-            booked_slots=booked
-        ):
-            free_slots.append(slot_start)
+        # Check availability
+        new_end = slot_dt + timedelta(minutes=max(duration, slot_interval))
+        
+        busy_emp_ids = set()
+        for b in booked_dt:
+            if slot_dt < b["end"] and b["start"] < new_end:
+                if b["employeeId"]:
+                    busy_emp_ids.add(b["employeeId"])
+        
+        # If at least ONE active employee is not in busy_emp_ids
+        if any(eid not in busy_emp_ids for eid in active_emp_ids):
+            free_slots.append(slot_start_str)
 
     return free_slots
 
@@ -310,16 +343,19 @@ def save_whatsapp_booking(salon_id, booking_data, collection="salon"):
         
         collection_plural = f"{collection}s"
         
-        if not is_slot_available(
-            salon_id,
-            booking_data["date"],
-            booking_data["startTime"],
-            duration=booking_data.get("totalDuration", 30),
-            collection=collection_plural
+        if not any(
+            str(emp["employeeId"]) == str(booking_data.get("employeeId"))
+            for emp in get_available_employees_for_slot(
+                salon_id,
+                booking_data["date"],
+                booking_data["startTime"],
+                duration=booking_data.get("totalDuration", 30),
+                collection=collection_plural
+            )
         ):
             return {
                 "success": False,
-                "message": "⚠️ This slot was just booked. Please choose another time."
+                "message": "⚠️ This staff member was just booked. Please choose another slot."
             }
 
         ref = db.reference(
@@ -674,7 +710,7 @@ def get_employees_by_salon(salon_id, collection="salons"):
 
         for emp_id, emp in items:
             if not isinstance(emp, dict): continue
-            if emp.get("isActive", True):
+            if emp.get("isActive") is True:
                 results.append({
                     "employeeId": emp_id,
                     "name": emp.get("name", "Staff"),
@@ -784,8 +820,8 @@ def get_appointments_for_reminder():
 
                 diff_minutes = (appointment_time - now).total_seconds() / 60
 
-                # send reminder 2 hours before
-                if 0 < diff_minutes <= 120:
+                # send reminder 45 minutes before
+                if 0 < diff_minutes <= 45:
 
                     # ==========================================
                     # FETCH MISSING DETAILS FOR NOTIFICATIONS
