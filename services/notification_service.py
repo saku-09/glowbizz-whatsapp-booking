@@ -159,10 +159,22 @@ def notify_customers_for_reminders():
         customer_name = customer.get("name") or "Customer"
         salon_name = booking.get("salonName") or "Salon"
         
-        services = booking.get("services") or [{}]
-        service_dict = services[0] if len(services) > 0 else {}
-        service_name = service_dict.get("serviceName") or service_dict.get("name") or "Service"
+        services = booking.get("services") or []
         
+        # Concatenate all service names
+        service_names = [s.get("serviceName") or s.get("name") or "Service" for s in services]
+        service_text = ", ".join(service_names) if service_names else "Service"
+        
+        # Calculate total price correctly
+        total_price = 0
+        for s in services:
+            try:
+                price_val = s.get("price")
+                if price_val is not None:
+                    total_price += int(price_val)
+            except (ValueError, TypeError):
+                continue
+
         staff_name = booking.get("employeeName") or "Staff"
         date = booking.get("date") or "Scheduled Date"
         time = booking.get("startTime") or "Scheduled Time"
@@ -170,16 +182,19 @@ def notify_customers_for_reminders():
         print("📋 Reminder Data:")
         print("Customer:", customer_name)
         print("Salon:", salon_name)
-        print("Service:", service_name)
+        print("Services:", service_text)
         print("Staff:", staff_name)
+        print("Total Price:", total_price)
         print("Date:", date)
         print("Time:", time)
+
         success = send_whatsapp_template(
             phone,
             customer_name,
             salon_name,
-            service_name,
+            service_text,
             staff_name,
+            total_price,
             date,
             time
         )

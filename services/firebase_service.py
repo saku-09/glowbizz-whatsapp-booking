@@ -332,7 +332,6 @@ def save_booked_slot(salon_id, booking, appointment_id, collection="salons"):
         "startTime": booking["startTime"],
         "endTime": end.strftime("%H:%M"),
         "status": booking["status"],
-        "customerId": booking["customerId"],
         "customerName": booking["customer"]["name"]
     })
 
@@ -369,15 +368,9 @@ def save_whatsapp_booking(salon_id, booking_data, collection="salon"):
             f"salonandspa/appointments/{collection}/{salon_id}"
         )
 
-        customer_id = find_customer_by_phone(booking_data["customer"]["phone"])
-
-        if not customer_id:
-            customer_id = create_customer(booking_data["customer"])
-
         booking = {
             "appointmentId": "",
             "createdAt": int(time.time()*1000),
-            "customerId": customer_id,
             "customer": booking_data["customer"],
 
             "placeId": salon_id,
@@ -527,8 +520,8 @@ def find_latest_active_booking_by_customer(
                             "date": booking.get("date"),
                             "startTime": booking.get("startTime"),
                             "salonName": booking.get("salonName"),
-                            "services": booking.get("services", []),
-                            "serviceName": booking.get("services", [{}])[0].get("serviceName", "Service"),
+                            "services": booking.get("services") or [],
+                            "serviceName": (booking.get("services") or [{}])[0].get("serviceName", "Service"),
                             "customer": customer,
                             "customerName": customer.get("name"),
                             "customerPhone": customer.get("phone"),
@@ -776,8 +769,8 @@ def get_customer_active_bookings(phone):
                     "salonName": booking.get("salonName") or "Salon",
                     "date": booking.get("date"),
                     "time": booking.get("startTime"),
-                    "services": booking.get("services", []),
-                    "service": booking.get("services", [{}])[0].get("serviceName", "Service"),
+                    "services": booking.get("services") or [],
+                    "service": (booking.get("services") or [{}])[0].get("serviceName", "Service"),
                     "collection": col,
                     "status": status,
                     "ownerUid": booking.get("ownerUid"),

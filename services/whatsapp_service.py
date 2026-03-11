@@ -157,7 +157,7 @@ def send_whatsapp_list(to, body_text, rows):
         print("❌ WhatsApp List Send Error:", str(e))
         return None
 
-def send_whatsapp_template(phone, customer, salon, service, staff, date, time):
+def send_whatsapp_template(phone, customer, salon, service, staff, price, date, time):
 
     url = f"https://graph.facebook.com/v19.0/{os.getenv('PHONE_NUMBER_ID')}/messages"
 
@@ -166,7 +166,7 @@ def send_whatsapp_template(phone, customer, salon, service, staff, date, time):
         "to": str(phone),
         "type": "template",
         "template": {
-            "name": "appointment_reminder_nexsalon",
+            "name": "appointment_reminder_customer",
             "language": {
                 "code": "en_US"
             },
@@ -179,7 +179,8 @@ def send_whatsapp_template(phone, customer, salon, service, staff, date, time):
                         {"type": "text", "text": service},
                         {"type": "text", "text": staff},
                         {"type": "text", "text": date},
-                        {"type": "text", "text": time}
+                        {"type": "text", "text": time},
+                        {"type": "text", "text": str(price)}
                     ]
                 }
             ]

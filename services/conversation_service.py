@@ -99,19 +99,6 @@ def auto_assign_employee(employees, time_slot):
 
 
 # ==================================================
-# EXPRESS BOOKING HELPERS
-# ==================================================
-
-def find_service_by_keyword(services, keyword):
-    """Fuzzy match service from list based on keyword."""
-    keyword = keyword.upper()
-    for s in services:
-        name = str(s.get("serviceName", "")).upper()
-        if keyword in name or name in keyword:
-            return s
-    return None
-
-# ==================================================
 # SALON PAGE SENDER (helper)
 # ==================================================
 
@@ -267,70 +254,7 @@ def handle_conversation(user_id, message):
         SESSIONS[user_id] = session
         # We don't return here; we let the state machine below handle it.
 
-    # ==================================================
-    # EXPRESS FAST BOOKING (2-CLICK)
-    # ==================================================
-    elif state in ["START", "MAIN_MENU"] and msg_upper not in RESTART_KEYWORDS:
-        
-        # 1. Match common service keywords
-        KEYWORDS = ["HAIRCUT", "FACIAL", "MASSAGE", "WAXING", "SPA", "MANICURE", "PEDICURE", "SHAVE"]
-        matched_kw = next((k for k in KEYWORDS if k in msg_upper), None)
-
-        if matched_kw:
-            # 2. Find last salon used by this user
-            last_booking = find_latest_active_booking_by_customer(phone=user_id)
-            
-            if last_booking:
-                salon_id = last_booking["salonId"]
-                salon_name = last_booking["salonName"]
-                collection = f"{last_booking.get('collection', 'salon')}s"
-                
-                # 3. Match service in that salon
-                all_services = find_services_by_salon(salon_id, collection=collection)
-                service = find_service_by_keyword(all_services, matched_kw)
-                
-                if service:
-                    # 4. Find earliest slot in next 7 days
-                    found_date, found_slot = None, None
-                    for i in range(7):
-                        d_str = (datetime.now() + timedelta(days=i)).strftime("%d-%m-%Y")
-                        slots = get_available_slots(salon_id, d_str, duration=service["duration"], collection=collection)
-                        if slots:
-                            found_date, found_slot = d_str, slots[0]
-                            break
-                    
-                    if found_date:
-                        # Success! Pre-fill session for confirmation
-                        data.update({
-                            "name": last_booking["customerName"],
-                            "phone": last_booking["customerPhone"],
-                            "gender": last_booking.get("customer", {}).get("gender", "Other"),
-                            "age": last_booking.get("customer", {}).get("age", ""),
-                            "salon": {"id": salon_id, "name": salon_name},
-                            "selected_services": [service],
-                            "date": found_date,
-                            "time": found_slot,
-                            "business_type": last_booking.get("collection", "salon"),
-                            "collection": collection,
-                            "is_rebook": True
-                        })
-                        
-                        summary = (
-                            f"⚡ *Express Booking Found!* ⚡\n\n"
-                            f"🏬 Salon: *{salon_name}*\n"
-                            f"💆 Service: *{service['serviceName']}*\n"
-                            f"📅 Date: *{found_date}*\n"
-                            f"⏰ Time: *{found_slot}*\n\n"
-                            "Would you like to confirm this booking? 👇"
-                        )
-                        
-                        send_whatsapp_buttons(user_id, summary, [{"id": "CONFIRM", "title": "Confirm Booking"}])
-                        
-                        session["state"] = "CONFIRM"
-                        SESSIONS[user_id] = session
-                        return ""
-
-    elif msg_upper in RESTART_KEYWORDS:
+    if msg_upper in RESTART_KEYWORDS:
 
         SESSIONS.pop(user_id, None)   # clear any existing session
         SESSIONS[user_id] = {"state": "MAIN_MENU", "data": {}}
@@ -428,9 +352,9 @@ def handle_conversation(user_id, message):
                     f"Previous Services:\n{services_text}\n\n"
                     f"What would you like to do?",
                     [
-                        {"id": "AUTO_REBOOK", "title": "⚡ Rebook Same (Auto)"},
-                        {"id": "CHANGE_SERVICE", "title": "Choose Another Service"},
-                        {"id": "NEW_BOOKING", "title": "Book Completely New"}
+                        {"id": "AUTO_REBOOK", "title": "⚡ Quick Rebook"},
+                        {"id": "CHANGE_SERVICE", "title": "Change Service"},
+                        {"id": "NEW_BOOKING", "title": "New Booking"}
                     ]
                 )
                 session["state"] = "REBOOK_CONFIRM"
@@ -849,8 +773,16 @@ def handle_conversation(user_id, message):
 
         salon = data["salon"]
         services = data.get("selected_services", [])
-        services_text = "\n".join([f"• {s['serviceName']}" for s in services])
-        total_amount = sum(int(s.get("price", 0)) for s in services)
+        services_text = "\n".join([f"• {s.get('serviceName', 'Service')}" for s in services if s and isinstance(s, dict)])
+        
+        def safe_int(val, default=0):
+            try:
+                if val is None: return default
+                return int(float(str(val).replace(',', '')))
+            except:
+                return default
+
+        total_amount = sum(safe_int(s.get("price")) for s in services if s and isinstance(s, dict))
 
         summary = (
             "📋 *Appointment Summary*\n\n"
@@ -890,8 +822,8 @@ def handle_conversation(user_id, message):
 
             salon = data["salon"]
             services = data.get("selected_services", [])
-            total_duration = sum(int(s.get("duration", 30)) for s in services)
-            total_amount = sum(int(s.get("price", 0)) for s in services)
+            total_duration = sum(int(s.get("duration", 30)) for s in services if s and isinstance(s, dict))
+            total_amount = sum(int(s.get("price", 0)) for s in services if s and isinstance(s, dict))
 
             business_type = data.get("business_type", "salon")
             collection_plural = data.get("collection", "salons")
@@ -1086,9 +1018,9 @@ def handle_conversation(user_id, message):
             f"Previous Services:\n{services_text}\n\n"
             f"What would you like to do?",
             [
-                {"id": "AUTO_REBOOK", "title": "⚡ Rebook Same (Auto)"},
-                {"id": "CHANGE_SERVICE", "title": "Choose Another Service"},
-                {"id": "NEW_BOOKING", "title": "Book Completely New"}
+                {"id": "AUTO_REBOOK", "title": "⚡ Quick Rebook"},
+                {"id": "CHANGE_SERVICE", "title": "Change Service"},
+                {"id": "NEW_BOOKING", "title": "New Booking"}
             ]
         )
 
@@ -1538,7 +1470,7 @@ def handle_conversation(user_id, message):
             response,
             [
                 {"id": "RESCHEDULE", "title": "Reschedule"},
-                {"id": "CANCEL", "title": "Cancel Appointment"}
+                {"id": "CANCEL", "title": "Cancel Booking"}
             ]
         )
 
