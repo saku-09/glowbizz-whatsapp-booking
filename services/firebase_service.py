@@ -255,8 +255,15 @@ def get_available_slots(salon_id, date, duration=30, collection="salons"):
         
         busy_emp_ids = set()
         for b in booked_dt:
-            if slot_dt < b["end"] and b["start"] < new_end:
-                if b["employeeId"]:
+            # Type safe overlap check for lints
+            b_start = b.get("start")
+            b_end = b.get("end")
+            
+            if not isinstance(b_start, datetime) or not isinstance(b_end, datetime):
+                continue
+
+            if slot_dt < b_end and b_start < new_end:
+                if b.get("employeeId"):
                     busy_emp_ids.add(b["employeeId"])
         
         # If at least ONE active employee is not in busy_emp_ids
@@ -754,7 +761,8 @@ def get_customer_active_bookings(phone):
                 if not isinstance(booking, dict):
                     continue
 
-                if booking.get("status") != "confirmed":
+                status = booking.get("status")
+                if status not in ["confirmed", "completed", "cancelled"]:
                     continue
 
                 customer = booking.get("customer", {})
@@ -771,6 +779,7 @@ def get_customer_active_bookings(phone):
                     "services": booking.get("services", []),
                     "service": booking.get("services", [{}])[0].get("serviceName", "Service"),
                     "collection": col,
+                    "status": status,
                     "ownerUid": booking.get("ownerUid"),
                     "totalDuration": booking.get("totalDuration", 30)
                 })

@@ -99,6 +99,19 @@ def auto_assign_employee(employees, time_slot):
 
 
 # ==================================================
+# EXPRESS BOOKING HELPERS
+# ==================================================
+
+def find_service_by_keyword(services, keyword):
+    """Fuzzy match service from list based on keyword."""
+    keyword = keyword.upper()
+    for s in services:
+        name = str(s.get("serviceName", "")).upper()
+        if keyword in name or name in keyword:
+            return s
+    return None
+
+# ==================================================
 # SALON PAGE SENDER (helper)
 # ==================================================
 
@@ -232,15 +245,94 @@ def handle_conversation(user_id, message):
 
 
 # ==================================================
-# GLOBAL RESTART — any greeting resets the session
+# GLOBAL RESTART & COMMAND INTERCEPTOR
 # ==================================================
 
     RESTART_KEYWORDS = {"HI", "HII", "HIII", "HELLO", "HEY", "START", "RESTART", "MENU", "HOME"}
+    
+    # Direct button IDs or explicit commands
+    DIRECT_COMMAND_MAP = {
+        "BOOK": "CITY",
+        "REBOOK": "MAIN_MENU",
+        "RESCHEDULE": "RESCHEDULE_PHONE",
+        "CANCEL": "CANCEL_PHONE",
+        "MY_BOOKINGS": "MY_BOOKINGS_PHONE"
+    }
 
-    if msg_upper in RESTART_KEYWORDS:
+    if msg_upper in DIRECT_COMMAND_MAP:
+        state = DIRECT_COMMAND_MAP[msg_upper]
+        data = {}
+        session["state"] = state
+        session["data"] = data
+        SESSIONS[user_id] = session
+        # We don't return here; we let the state machine below handle it.
+
+    # ==================================================
+    # EXPRESS FAST BOOKING (2-CLICK)
+    # ==================================================
+    elif state in ["START", "MAIN_MENU"] and msg_upper not in RESTART_KEYWORDS:
+        
+        # 1. Match common service keywords
+        KEYWORDS = ["HAIRCUT", "FACIAL", "MASSAGE", "WAXING", "SPA", "MANICURE", "PEDICURE", "SHAVE"]
+        matched_kw = next((k for k in KEYWORDS if k in msg_upper), None)
+
+        if matched_kw:
+            # 2. Find last salon used by this user
+            last_booking = find_latest_active_booking_by_customer(phone=user_id)
+            
+            if last_booking:
+                salon_id = last_booking["salonId"]
+                salon_name = last_booking["salonName"]
+                collection = f"{last_booking.get('collection', 'salon')}s"
+                
+                # 3. Match service in that salon
+                all_services = find_services_by_salon(salon_id, collection=collection)
+                service = find_service_by_keyword(all_services, matched_kw)
+                
+                if service:
+                    # 4. Find earliest slot in next 7 days
+                    found_date, found_slot = None, None
+                    for i in range(7):
+                        d_str = (datetime.now() + timedelta(days=i)).strftime("%d-%m-%Y")
+                        slots = get_available_slots(salon_id, d_str, duration=service["duration"], collection=collection)
+                        if slots:
+                            found_date, found_slot = d_str, slots[0]
+                            break
+                    
+                    if found_date:
+                        # Success! Pre-fill session for confirmation
+                        data.update({
+                            "name": last_booking["customerName"],
+                            "phone": last_booking["customerPhone"],
+                            "gender": last_booking.get("customer", {}).get("gender", "Other"),
+                            "age": last_booking.get("customer", {}).get("age", ""),
+                            "salon": {"id": salon_id, "name": salon_name},
+                            "selected_services": [service],
+                            "date": found_date,
+                            "time": found_slot,
+                            "business_type": last_booking.get("collection", "salon"),
+                            "collection": collection,
+                            "is_rebook": True
+                        })
+                        
+                        summary = (
+                            f"⚡ *Express Booking Found!* ⚡\n\n"
+                            f"🏬 Salon: *{salon_name}*\n"
+                            f"💆 Service: *{service['serviceName']}*\n"
+                            f"📅 Date: *{found_date}*\n"
+                            f"⏰ Time: *{found_slot}*\n\n"
+                            "Would you like to confirm this booking? 👇"
+                        )
+                        
+                        send_whatsapp_buttons(user_id, summary, [{"id": "CONFIRM", "title": "Confirm Booking"}])
+                        
+                        session["state"] = "CONFIRM"
+                        SESSIONS[user_id] = session
+                        return ""
+
+    elif msg_upper in RESTART_KEYWORDS:
 
         SESSIONS.pop(user_id, None)   # clear any existing session
-
         SESSIONS[user_id] = {"state": "MAIN_MENU", "data": {}}
 
         result = send_whatsapp_list(
@@ -875,9 +967,8 @@ def handle_conversation(user_id, message):
                 "🎉 *Booking Confirmed!*\n\n"
                 "Your appointment has been successfully booked.\n"
                 "Thank you for choosing NexSalon 💇‍♀️\n\n"
-                "What would you like to do next? 👇",
+                "View your appointments 👇",
                 [
-                    {"id": "BOOK", "title": "Book Another"},
                     {"id": "MY_BOOKINGS", "title": "My Bookings"}
                 ]
             )
@@ -1347,23 +1438,112 @@ def handle_conversation(user_id, message):
 
         if not bookings:
             SESSIONS.pop(user_id, None)
-            return "❌ No upcoming appointments found for this phone number."
+            return "❌ No appointments found for this phone number."
 
-        response = "📋 *Your Upcoming Appointments*\n\n"
-        for i, b in enumerate(bookings):
-            response += f"{i+1}. {b['date']} at {b['time']}\n"
-            response += f"   🏬 {b.get('salonName', 'Salon')}\n"
-            # Display primary service or list of services if available
-            services_list = b.get('services', [])
-            if services_list:
-                services_str = ", ".join([s.get('serviceName', 'Service') for s in services_list])
-            else:
-                services_str = b.get('service', 'Service')
-            response += f"   💆 {services_str}\n\n"
-        
-        response += "To cancel or reschedule, please use the main menu options."
-        
+        response = "📋 *Your Appointments*\n\n"
+
+        now = datetime.now()
+
+        upcoming = []
+        past = []
+        cancelled = []
+
+        for b in bookings:
+            if b.get("status") == "cancelled":
+                cancelled.append(b)
+                continue
+
+            try:
+                dt = datetime.strptime(
+                    f"{b['date']} {b['time']}",
+                    "%d-%m-%Y %H:%M"
+                )
+
+                if dt >= now:
+                    upcoming.append(b)
+                else:
+                    past.append(b)
+
+            except:
+                upcoming.append(b)
+
+        # =========================
+        # UPCOMING BOOKINGS
+        # =========================
+
+        if upcoming:
+
+            response += "🟢 *Upcoming Appointments*\n\n"
+
+            for b in upcoming:
+
+                services_list = b.get("services", [])
+
+                services_str = ", ".join(
+                    [s.get("serviceName","Service") for s in services_list]
+                )
+
+                response += (
+                    f"📅 {b['date']} ⏰ {b['time']}\n"
+                    f"🏬 {b.get('salonName','Salon')}\n"
+                    f"💆 {services_str}\n\n"
+                )
+
+        # =========================
+        # PAST BOOKINGS
+        # =========================
+
+        if past:
+
+            response += "⚪ *Past Appointments*\n\n"
+
+            for b in past:
+
+                services_list = b.get("services", [])
+
+                services_str = ", ".join(
+                    [s.get("serviceName","Service") for s in services_list]
+                )
+
+                response += (
+                    f"📅 {b['date']} ⏰ {b['time']}\n"
+                    f"🏬 {b.get('salonName','Salon')}\n"
+                    f"💆 {services_str}\n\n"
+                )
+
+        # =========================
+        # CANCELLED BOOKINGS
+        # =========================
+
+        if cancelled:
+
+            response += "🔴 *Cancelled Appointments*\n\n"
+
+            for b in cancelled:
+
+                services_list = b.get("services", [])
+
+                services_str = ", ".join(
+                    [s.get("serviceName","Service") for s in services_list]
+                )
+
+                response += (
+                    f"📅 {b['date']} ⏰ {b['time']}\n"
+                    f"🏬 {b.get('salonName','Salon')}\n"
+                    f"💆 {services_str}\n\n"
+                )
+
+        send_whatsapp_buttons(
+            user_id,
+            response,
+            [
+                {"id": "RESCHEDULE", "title": "Reschedule"},
+                {"id": "CANCEL", "title": "Cancel Appointment"}
+            ]
+        )
+
         SESSIONS.pop(user_id, None)
-        return response
+
+        return ""
 
     return "Type HI to start."
