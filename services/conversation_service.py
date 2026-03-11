@@ -17,7 +17,8 @@ from services.firebase_service import (
     cancel_appointment_and_cleanup,
     find_latest_active_booking_by_customer,
     find_owner_uid_by_salon,
-    get_customer_active_bookings
+    get_customer_active_bookings,
+    normalize_phone
 )
 
 from services.whatsapp_service import (
@@ -243,32 +244,94 @@ def handle_conversation(user_id, message):
         "REBOOK": "MAIN_MENU",
         "RESCHEDULE": "RESCHEDULE_PHONE",
         "CANCEL": "CANCEL_PHONE",
-        "MY_BOOKINGS": "MY_BOOKINGS_PHONE"
+        "MY_BOOKINGS": "MY_BOOKINGS_PHONE",
+        "MORE_MENU": "MAIN_MENU"
     }
 
     if msg_upper in DIRECT_COMMAND_MAP:
-        state = DIRECT_COMMAND_MAP[msg_upper]
-        data = {}
-        session["state"] = state
-        session["data"] = data
+        target_state = DIRECT_COMMAND_MAP[msg_upper]
+        
+        # ⚡ 1-TAP "MY_BOOKINGS" PROACTIVE CHECK
+        if msg_upper == "MY_BOOKINGS":
+            phone = normalize_phone(user_id)
+            bookings = get_customer_active_bookings(phone)
+            if bookings:
+                session["state"] = "MY_BOOKINGS_PHONE"
+                session["data"] = {}
+                SESSIONS[user_id] = session
+                return handle_conversation(user_id, phone)
+            
+            session["state"] = "MY_BOOKINGS_PHONE"
+            session["data"] = {}
+            SESSIONS[user_id] = session
+            return "📱 Please enter your phone number to view your appointments"
+
+        # ⚡ 1-TAP "RESCHEDULE" PROACTIVE CHECK
+        if msg_upper == "RESCHEDULE":
+            phone = normalize_phone(user_id)
+            booking = find_latest_active_booking_by_customer(phone=phone)
+            if booking:
+                session["state"] = "RESCHEDULE_PHONE"
+                session["data"] = {}
+                SESSIONS[user_id] = session
+                return handle_conversation(user_id, phone)
+            
+            session["state"] = "RESCHEDULE_PHONE"
+            session["data"] = {}
+            SESSIONS[user_id] = session
+            return "📱 Please enter the phone number used for booking."
+
+        # ⚡ 1-TAP "CANCEL" PROACTIVE CHECK
+        if msg_upper == "CANCEL":
+            phone = normalize_phone(user_id)
+            booking = find_latest_active_booking_by_customer(phone=phone)
+            if booking:
+                session["state"] = "CANCEL_PHONE"
+                session["data"] = {}
+                SESSIONS[user_id] = session
+                return handle_conversation(user_id, phone)
+            
+            session["state"] = "CANCEL_PHONE"
+            session["data"] = {}
+            SESSIONS[user_id] = session
+            return "Please enter your registered phone number"
+
+        # ⚡ OTHER COMMANDS
+        if msg_upper == "BOOK":
+            session["state"] = "CITY"
+            session["data"] = {}
+            SESSIONS[user_id] = session
+            return "📍 Please enter your City"
+
+        if msg_upper == "REBOOK":
+            session["state"] = "MAIN_MENU"
+            session["data"] = {}
+            SESSIONS[user_id] = session
+            return handle_conversation(user_id, "REBOOK")
+
+        if msg_upper == "MORE_MENU":
+            session["state"] = "MAIN_MENU"
+            session["data"] = {}
+            SESSIONS[user_id] = session
+            return handle_conversation(user_id, "MORE_MENU")
+
+        session["state"] = target_state
+        session["data"] = {}
         SESSIONS[user_id] = session
-        # We don't return here; we let the state machine below handle it.
+        return ""
 
     if msg_upper in RESTART_KEYWORDS:
 
         SESSIONS.pop(user_id, None)   # clear any existing session
         SESSIONS[user_id] = {"state": "MAIN_MENU", "data": {}}
 
-        result = send_whatsapp_list(
+        result = send_whatsapp_buttons(
             user_id,
-            "✨ *Welcome to NexSalon* ✨\n\nBook your Salon & Spa appointment in seconds.\n\n"
-            "Choose an option below 👇",
+            "✨ *Welcome to NexSalon* ✨\n\nYour personal salon booking assistant 💇‍♀️\n\nChoose an option below 👇",
             [
-                {"id": "BOOK",   "title": "Book Appointment", "description": "Start a new booking"},
-                {"id": "REBOOK", "title": "Rebook Last", "description": "Repeat your last order"},
-                {"id": "RESCHEDULE", "title": "Reschedule", "description": "Change existing booking"},
-                {"id": "CANCEL", "title": "Cancel Appointment", "description": "Cancel a booking"},
-                {"id": "MY_BOOKINGS", "title": "My Bookings", "description": "View all upcoming slots"}
+                {"id": "BOOK", "title": "Book Appointment"},
+                {"id": "MY_BOOKINGS", "title": "My Bookings"},
+                {"id": "MORE_MENU", "title": "More Options"}
             ]
         )
 
@@ -287,15 +350,13 @@ def handle_conversation(user_id, message):
         session["state"] = "MAIN_MENU"
         SESSIONS[user_id] = session
 
-        result = send_whatsapp_list(
+        result = send_whatsapp_buttons(
             user_id,
-            "✨ *Welcome to NexSalon* ✨\n\nYour personal salon booking assistant 💇‍♀️",
+            "✨ *Welcome to NexSalon* ✨\n\nYour personal salon booking assistant 💇‍♀️\n\nChoose an option below 👇",
             [
-                {"id": "BOOK",   "title": "Book Appointment", "description": "Start a new booking"},
-                {"id": "REBOOK", "title": "Rebook Last", "description": "Repeat your last order"},
-                {"id": "RESCHEDULE", "title": "Reschedule", "description": "Change existing booking"},
-                {"id": "CANCEL", "title": "Cancel Appointment", "description": "Cancel a booking"},
-                {"id": "MY_BOOKINGS", "title": "My Bookings", "description": "View all upcoming slots"}
+                {"id": "BOOK", "title": "Book Appointment"},
+                {"id": "MY_BOOKINGS", "title": "My Bookings"},
+                {"id": "MORE_MENU", "title": "More Options"}
             ]
         )
 
@@ -310,6 +371,18 @@ def handle_conversation(user_id, message):
 # ==================================================
 
     if state == "MAIN_MENU":
+
+        if msg_upper == "MORE_MENU":
+            send_whatsapp_buttons(
+                user_id,
+                "More options 👇",
+                [
+                    {"id": "REBOOK", "title": "Rebook Last"},
+                    {"id": "RESCHEDULE", "title": "Reschedule"},
+                    {"id": "CANCEL", "title": "Cancel"}
+                ]
+            )
+            return ""
 
         if msg_upper in ["BOOK", "BOOK APPOINTMENT"]:
 
@@ -575,6 +648,14 @@ def handle_conversation(user_id, message):
 
     if state == "SELECT_DATE":
 
+        if msg_upper == "SELECT_DATE_BACK":
+            rows = generate_calendar_dates()
+            return send_whatsapp_list(
+                user_id,
+                "📅 *Choose Appointment Date*\n\nSelect your preferred day 👇",
+                rows
+            )
+
         data["date"] = msg
 
         salon = data["salon"]
@@ -592,16 +673,41 @@ def handle_conversation(user_id, message):
             collection=collection
         )
 
-        # ❌ NO SLOTS
+        # ❌ NO SLOTS -> SMART DATE SUGGESTION
         if not free_slots:
+            # Search for the nearest date with slots
+            suggested_date = None
+            for i in range(1, 8): # Check next 7 days
+                check_dt = dt + timedelta(days=i)
+                d_str = check_dt.strftime("%d-%m-%Y")
+                alt_slots = get_available_slots(salon["id"], d_str, duration=total_duration, collection=collection)
+                if alt_slots:
+                    suggested_date = d_str
+                    break
+            
+            if suggested_date:
+                # Format date for display
+                s_dt = datetime.strptime(suggested_date, "%d-%m-%Y")
+                readable_date = s_dt.strftime("%A, %d %b")
+                
+                send_whatsapp_buttons(
+                    user_id,
+                    f"❗ *No slots available on {msg}.*\n\n"
+                    f"Good news! We found available slots on *{readable_date}*.\n\n"
+                    f"Would you like to check {readable_date} instead? 👇",
+                    [
+                        {"id": suggested_date, "title": f"See {readable_date}"},
+                        {"id": "SELECT_DATE_BACK", "title": "Pick Another Date"}
+                    ]
+                )
+                session["state"] = "SELECT_DATE" # Stay here to catch the button click as a date
+            else:
+                send_whatsapp_list(
+                    user_id,
+                    "❌ No slots available for the next 7 days. Please try a different salon or city.",
+                    generate_calendar_dates()
+                )
 
-            send_whatsapp_list(
-                user_id,
-                "❌ No slots available on this date.\n\nPlease choose another date.",
-                generate_calendar_dates()
-            )
-
-            session["state"] = "SELECT_DATE"
             SESSIONS[user_id] = session
             return ""
 
@@ -899,8 +1005,9 @@ def handle_conversation(user_id, message):
                 "🎉 *Booking Confirmed!*\n\n"
                 "Your appointment has been successfully booked.\n"
                 "Thank you for choosing NexSalon 💇‍♀️\n\n"
-                "View your appointments 👇",
+                "What would you like to do next? 👇",
                 [
+                    {"id": "REBOOK", "title": "Rebook Last"},
                     {"id": "MY_BOOKINGS", "title": "My Bookings"}
                 ]
             )
