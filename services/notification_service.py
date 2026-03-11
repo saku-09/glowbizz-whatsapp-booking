@@ -208,7 +208,7 @@ def reminder_loop():
         except Exception as e:
             print("❌ Reminder loop error:", e)
 
-        time.sleep(60)  # run every 10 minutes
+        time.sleep(600)  # run every 10 minutes
 
 print("🚀 Reminder service initialized")
 # Start reminder thread automatically

@@ -13,6 +13,7 @@ from services.firebase_service import (
     get_booked_slots_from_salon_node,
     is_slot_available,
     get_available_slots,
+    get_available_employees_for_slot,
     cancel_appointment_and_cleanup,
     find_latest_active_booking_by_customer,
     find_owner_uid_by_salon,
@@ -84,11 +85,14 @@ def generate_calendar_dates():
 # ==================================================
 
 def auto_assign_employee(employees, time_slot):
-
+    """
+    Randomly assigns an employee from the provided list.
+    'employees' should now be pre-filtered to include only those FREE at 'time_slot'.
+    """
     if not employees:
         return None
 
-    # simple load balancing using time slot hash
+    # Load balancing using time slot hash
     index = abs(hash(time_slot)) % len(employees)
 
     return employees[index]
@@ -759,10 +763,36 @@ def handle_conversation(user_id, message):
             business_type = data.get("business_type", "salon")
             collection_plural = data.get("collection", "salons")
 
-            employees = find_employees_by_salon(salon["id"], collection=collection_plural)
+            # 🛠️ OPTIMIZED MULTI-STAFF ASSIGNMENT
+            # 1. Fetch all booked slots for this date
+            booked_slots = get_booked_slots_from_salon_node(
+                salon["id"], 
+                data["date"], 
+                collection=collection_plural
+            )
 
-            # AUTO EMPLOYEE ASSIGNMENT
-            employee = auto_assign_employee(employees, data["time"])
+            # 2. Get active employees for this salon
+            active_employees = find_employees_by_salon(
+                salon["id"], 
+                collection=collection_plural
+            )
+
+            # 3. Identify who is specifically FREE for this time slot
+            free_employees = get_available_employees_for_slot(
+                salon["id"],
+                data["date"],
+                data["time"],
+                duration=total_duration,
+                collection=collection_plural,
+                booked_slots=booked_slots,
+                active_employees=active_employees
+            )
+
+            # 4. Auto Assignment from the FREE pool
+            employee = auto_assign_employee(free_employees, data["time"])
+
+            if not employee:
+                return "⚠️ Sorry, all staff members have just been booked at this time. Please choose another slot."
 
             owner_uid = find_owner_uid_by_salon(salon["id"])
 
@@ -778,8 +808,8 @@ def handle_conversation(user_id, message):
                 "placeId": salon["id"],
                 "salonName": salon.get("name") or salon.get("salonName"),
                 "branch": salon.get("branch") or salon.get("address"),
-                "employeeId": employee["employeeId"] if employee else "auto",
-                "employeeName": employee["name"] if employee else "Auto-Assign",
+                "employeeId": employee["employeeId"],
+                "employeeName": employee["name"],
                 "services": services,
                 "totalDuration": total_duration,
                 "totalAmount": total_amount,
@@ -1171,6 +1201,36 @@ def handle_conversation(user_id, message):
         total_amount = sum(int(s.get("price", 0)) for s in services)
         owner_uid = find_owner_uid_by_salon(booking["salonId"])
 
+        # 🛠️ OPTIMIZED MULTI-STAFF ASSIGNMENT FOR RESCHEDULE
+        # 1. Fetch data
+        collection_plural = f"{booking.get('collection', 'salon')}s"
+        booked_slots = get_booked_slots_from_salon_node(
+            booking["salonId"], 
+            data["reschedule_date"], 
+            collection=collection_plural
+        )
+        active_employees = find_employees_by_salon(
+            booking["salonId"], 
+            collection=collection_plural
+        )
+
+        # 2. Identify specifically FREE staff for the new time
+        free_employees = get_available_employees_for_slot(
+            booking["salonId"],
+            data["reschedule_date"],
+            msg,
+            duration=total_duration,
+            collection=collection_plural,
+            booked_slots=booked_slots,
+            active_employees=active_employees
+        )
+
+        # 3. Auto-Assign
+        employee = auto_assign_employee(free_employees, msg)
+
+        if not employee:
+            return "⚠️ Sorry, all staff members have just been booked at this time. Please choose another slot."
+
         # Construct new booking with proper customer object
         new_booking = {
             "customer": {
@@ -1181,8 +1241,8 @@ def handle_conversation(user_id, message):
             },
             "placeId": booking["salonId"],
             "salonName": booking.get("salonName"),
-            "employeeId": "auto",
-            "employeeName": "Auto-Assign",
+            "employeeId": employee["employeeId"],
+            "employeeName": employee["name"],
             "services": services,
             "totalDuration": total_duration,
             "totalAmount": total_amount,
