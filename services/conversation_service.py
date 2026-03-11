@@ -129,9 +129,9 @@ def _send_salon_page(user_id, all_salons, page):
 
     total_pages = (len(all_salons) + PAGE_SIZE - 1) // PAGE_SIZE
     header = (
-    f"🏬 *Choose a Salon*\n"
+    f"🏬 *Choose a Salon and Spa*\n"
     f"Page {page+1}/{total_pages}\n\n"
-    f"Select a salon near you 👇"
+    f"Select a place near you 👇"
 )
 
     return send_whatsapp_list(user_id, header, rows)
@@ -231,11 +231,19 @@ def handle_conversation(user_id, message):
         "REBOOK LAST": "REBOOK",
         "BOOK APPOINTMENT": "BOOK",
         "MORE OPTIONS": "MORE_MENU",
-        "CANCEL APPOINTMENT": "CANCEL"
+        "CANCEL APPOINTMENT": "CANCEL",
+        "QUICK REBOOK": "AUTO_REBOOK",
+        "⚡ QUICK REBOOK": "AUTO_REBOOK",
+        "CHANGE SERVICE": "CHANGE_SERVICE",
+        "NEW BOOKING": "NEW_BOOKING"
     }
 
-    if msg_upper in BUTTON_NORMALIZER:
-        msg_upper = BUTTON_NORMALIZER[msg_upper]
+    msg_upper = msg_upper.strip()
+
+    for key, value in BUTTON_NORMALIZER.items():
+        if key in msg_upper:
+            msg_upper = value
+            break
 
     msg_lower = msg.lower()
 
@@ -1211,6 +1219,10 @@ def handle_conversation(user_id, message):
         return ""
 
     if state == "REBOOK_CONFIRM":
+
+        print("REBOOK_CONFIRM STATE")
+        print("USER MESSAGE:", msg)
+        print("NORMALIZED:", msg_upper)
 
         # 1️⃣ AUTO REBOOK (automatic date + slot)
         if msg_upper == "AUTO_REBOOK":

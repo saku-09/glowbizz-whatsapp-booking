@@ -393,17 +393,22 @@ def save_whatsapp_booking(salon_id, booking_data, collection="salon"):
     }
 
     new_ref = ref.push()
-
     booking["appointmentId"] = new_ref.key
 
-    new_ref.set(booking)
+    try:
+        save_booked_slot(
+            salon_id,
+            booking,
+            new_ref.key,
+            collection=collection_plural
+        )
+    except Exception as e:
+        return {
+            "success": False,
+            "message": "⚠️ This slot was just booked. Please choose another time."
+        }
 
-    save_booked_slot(
-        salon_id,
-        booking,
-        new_ref.key,
-        collection=collection_plural
-    )
+    new_ref.set(booking)
 
     return new_ref.key
 
