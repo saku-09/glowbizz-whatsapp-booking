@@ -224,9 +224,15 @@ def handle_conversation(user_id, message):
     data = session["data"]
 
     msg = message.strip()
-    msg_upper = msg.upper()
 
-    msg_upper = msg.upper().strip()
+    # Prevent duplicate identical messages entirely
+    if session.get("last_message") == msg and state != "REBOOK_CONFIRM":
+        return ""
+
+    session["last_message"] = msg
+    SESSIONS[user_id] = session
+
+    msg_upper = msg.upper()
     
     BUTTON_NORMALIZER = {
         "MY BOOKINGS": "MY_BOOKINGS",
@@ -239,12 +245,19 @@ def handle_conversation(user_id, message):
         "NEW BOOKING": "NEW_BOOKING"
     }
 
-    for key in BUTTON_NORMALIZER:
-        if key in msg_upper:
-            msg_upper = BUTTON_NORMALIZER[key]
+    # Normalize button titles only if user typed text manually
+    for key, value in BUTTON_NORMALIZER.items():
+        if msg_upper == key:
+            msg_upper = value
             break
 
     msg_lower = msg.lower()
+
+    # Handle rebook buttons globally
+    if msg_upper in ["AUTO_REBOOK", "CHANGE_SERVICE", "NEW_BOOKING"]:
+        session["state"] = "REBOOK_CONFIRM"
+        state = "REBOOK_CONFIRM"
+        SESSIONS[user_id] = session
 
     print("MESSAGE RECEIVED:", msg)
     print("DEBUG:", user_id, state, msg)
@@ -320,7 +333,12 @@ def handle_conversation(user_id, message):
 
     if msg_upper in RESTART_KEYWORDS:
 
-        SESSIONS.pop(user_id, None)   # clear any existing session
+        session = SESSIONS.get(user_id)
+
+        # Prevent sending welcome multiple times
+        if session and session.get("state") == "MAIN_MENU":
+            return ""
+
         SESSIONS[user_id] = {"state": "MAIN_MENU", "data": {}}
 
         result = send_whatsapp_buttons(
@@ -989,7 +1007,7 @@ def handle_conversation(user_id, message):
                     "age": data["age"]
                 },
 
-                "placeId": salon["id"],
+                "salonId": salon["id"],
                 "salonName": salon.get("name") or salon.get("salonName"),
                 "branch": salon.get("branch") or salon.get("address"),
                 "employeeId": employee["employeeId"],
@@ -1467,7 +1485,7 @@ def handle_conversation(user_id, message):
                 "gender": booking.get("customer", {}).get("gender", ""),
                 "age": booking.get("customer", {}).get("age", "")
             },
-            "placeId": booking["salonId"],
+            "salonId": booking["salonId"],
             "salonName": booking.get("salonName"),
             "employeeId": employee["employeeId"],
             "employeeName": employee["name"],

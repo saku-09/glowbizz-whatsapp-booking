@@ -375,7 +375,7 @@ def save_whatsapp_booking(salon_id, booking_data, collection="salon"):
         "createdAt": int(time.time()*1000),
         "customer": booking_data["customer"],
 
-        "placeId": salon_id,
+        "salonId": salon_id,
         "salonName": booking_data.get("salonName"),
 
         "employeeId": booking_data["employeeId"],
