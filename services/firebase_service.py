@@ -782,11 +782,22 @@ def get_services_by_salon(salon_id, collection="salons"):
             if not isinstance(s, dict): continue
             if not s.get("isActive", True): continue
 
+            gender_type = s.get("Gender", "Default")
+
             results.append({
-                "serviceId": sid,
-                "serviceName": str(s.get("name") or s.get("serviceName") or "Service"),
-                "price": int(s.get("price", 0)),
-                "duration": int(s.get("duration", 30))
+                  "serviceId": sid,
+                  "serviceName": str(s.get("name") or s.get("serviceName") or "Service"),
+                   "duration": int(s.get("duration", 30)),
+
+                   # gender type
+                   "genderType": gender_type,
+
+                   # default price
+                   "price": int(s.get("price", 0)),
+
+                   # gender pricing
+                   "malePrice": int(s.get("malePrice", 0)),
+                   "femalePrice": int(s.get("femalePrice", 0))
             })
 
         return results

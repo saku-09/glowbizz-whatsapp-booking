@@ -157,10 +157,21 @@ def _send_service_page(user_id, all_services, page):
 
         title = (s.get("serviceName") or "Service")[:24]
 
-        price = s.get("price", 0)
         duration = s.get("duration", 30)
+        gender_type = s.get("genderType", "Default")
 
-        desc = f"₹{price} | {duration} min"
+        if gender_type == "Default":
+            price = safe_int(s.get("price"))
+            desc = f"₹{price} | {duration} min"
+
+        elif gender_type == "Unisex":
+            male_price = safe_int(s.get("malePrice"))
+            female_price = safe_int(s.get("femalePrice"))
+            desc = f"👨 ₹{male_price} | 👩 ₹{female_price} | {duration} min"
+
+        else:
+            price = safe_int(s.get("price"))
+            desc = f"₹{price} | {duration} min"
 
         rows.append({
             "id": str(s.get("serviceId")),
@@ -905,6 +916,19 @@ def handle_conversation(user_id, message):
             return "Please select gender using the buttons."
 
         data["gender"] = gender_map[msg.upper()]
+        # Apply correct price based on gender
+        gender = data["gender"]
+
+        for s in data.get("selected_services", []):
+
+            if s.get("genderType") == "Default":
+                s["price"] = safe_int(s.get("price"))
+
+            elif gender == "Male":
+                s["price"] = safe_int(s.get("malePrice"))
+
+            elif gender == "Female":
+                s["price"] = safe_int(s.get("femalePrice"))
         session["state"] = "AGE"
         SESSIONS[user_id] = session
 
@@ -1608,7 +1632,7 @@ def handle_conversation(user_id, message):
     if state == "MY_BOOKINGS_PHONE":
         msg = msg.strip()
         print(f"🔍 DEBUG MY_BOOKINGS_PHONE: Input='{msg}', Normalized='{normalize_phone(msg)}'")
-        bookings = get_customer_active_bookings(msg)
+        bookings = get_customer_active_bookings(normalize_phone(msg))
 
         if not bookings:
             SESSIONS.pop(user_id, None)
@@ -1626,13 +1650,16 @@ def handle_conversation(user_id, message):
         cancelled = []
 
         for b in bookings:
+
             if b.get("status") == "cancelled":
                 cancelled.append(b)
                 continue
 
             try:
+                booking_time = b.get("startTime") or b.get("time")
+
                 dt = datetime.strptime(
-                    f"{b['date']} {b['time']}",
+                    f"{b['date']} {booking_time}",
                     "%d-%m-%Y %H:%M"
                 )
 
@@ -1641,9 +1668,9 @@ def handle_conversation(user_id, message):
                 else:
                     past.append(b)
 
-            except:
+            except Exception as e:
+                print("DATE PARSE ERROR:", e)
                 upcoming.append(b)
-
         # =========================
         # UPCOMING BOOKINGS
         # =========================
