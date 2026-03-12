@@ -119,6 +119,10 @@ def _send_salon_page(user_id, all_salons, page):
     rows = []
 
     for salon in page_salons:
+
+        if not isinstance(salon, dict):
+            continue
+
         title = (salon.get("name") or salon.get("salonName") or "Salon")[:24]
         row = {"id": str(salon.get("id")), "title": title}
         description = (salon.get("address") or "")[:72]
