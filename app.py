@@ -190,7 +190,8 @@ def webhook():
                 # SEND WHATSAPP MESSAGE
                 # ----------------------------
 
-                if reply and reply.strip() != "":
+                # Ensure reply is a non-empty string before sending
+                if isinstance(reply, str) and reply.strip() != "":
                     print("📤 Sending WhatsApp reply...")
                     send_whatsapp_message(phone, reply)
 

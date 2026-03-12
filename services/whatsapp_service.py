@@ -35,7 +35,7 @@ def send_whatsapp_message(to, message):
 
     try:
 
-        response = requests.post(GRAPH_URL, headers=headers, json=payload)
+        response = requests.post(GRAPH_URL, headers=headers, json=payload, timeout=10)
 
         print("📤 Sending text message")
         print("Status:", response.status_code)
@@ -92,7 +92,7 @@ def send_whatsapp_buttons(to, body_text, buttons):
 
     try:
 
-        response = requests.post(GRAPH_URL, headers=headers, json=payload)
+        response = requests.post(GRAPH_URL, headers=headers, json=payload, timeout=10)
 
         print("📤 Sending button message")
         print("Status:", response.status_code)
@@ -140,7 +140,7 @@ def send_whatsapp_list(to, body_text, rows):
 
     try:
 
-        response = requests.post(GRAPH_URL, headers=headers, json=payload)
+        response = requests.post(GRAPH_URL, headers=headers, json=payload, timeout=10)
 
         print("📤 Sending list message")
         print("Status:", response.status_code)
@@ -192,7 +192,7 @@ def send_whatsapp_template(phone, customer, salon, service, staff, price, date, 
         "Content-Type": "application/json"
     }
 
-    response = requests.post(url, json=payload, headers=headers)
+    response = requests.post(url, json=payload, headers=headers, timeout=10)
 
     print("📤 Sending template")
     print("Status:", response.status_code)

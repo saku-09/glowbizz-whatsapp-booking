@@ -233,6 +233,7 @@ def handle_conversation(user_id, message):
     SESSIONS[user_id] = session
 
     msg_upper = msg.upper()
+    print(f"DEBUG Trace: User={user_id}, State={state}, Msg={msg}, Normalized={msg_upper}")
     
     BUTTON_NORMALIZER = {
         "MY BOOKINGS": "MY_BOOKINGS",
@@ -255,9 +256,11 @@ def handle_conversation(user_id, message):
 
     # Handle rebook buttons globally
     if msg_upper in ["AUTO_REBOOK", "CHANGE_SERVICE", "NEW_BOOKING"]:
-        session["state"] = "REBOOK_CONFIRM"
-        state = "REBOOK_CONFIRM"
-        SESSIONS[user_id] = session
+        # Only allow transition if we have the needed data
+        if data.get("last_booking"):
+            session["state"] = "REBOOK_CONFIRM"
+            state = "REBOOK_CONFIRM"
+            SESSIONS[user_id] = session
 
     print("MESSAGE RECEIVED:", msg)
     print("DEBUG:", user_id, state, msg)
@@ -1235,7 +1238,14 @@ def handle_conversation(user_id, message):
         SESSIONS[user_id] = session
         return ""
 
+
     if state == "REBOOK_CONFIRM":
+        print(f"DEBUG Trace: Entering REBOOK_CONFIRM block for {user_id}")
+        booking = data.get("last_booking")
+        if not booking:
+            session["state"] = "MAIN_MENU"
+            SESSIONS[user_id] = session
+            return "⚠️ Session lost. Please type MENU to start over."
 
         print("REBOOK_CONFIRM STATE")
         print("USER MESSAGE:", msg)
@@ -1261,7 +1271,9 @@ def handle_conversation(user_id, message):
             found_slot = None
 
             for i in range(3):
-                date_str = (datetime.now() + timedelta(days=i)).strftime("%d-%m-%Y")
+                utc_now = datetime.utcnow()
+                ist_now = utc_now + timedelta(hours=5, minutes=30)
+                date_str = (ist_now + timedelta(days=i)).strftime("%d-%m-%Y")
                 slots = get_available_slots(
                     salon_id,
                     date_str,
@@ -1338,7 +1350,8 @@ def handle_conversation(user_id, message):
             session["state"] = "SELECT_SERVICE"
             SESSIONS[user_id] = session
 
-            return _send_service_page(user_id, all_services, 0)
+            _send_service_page(user_id, all_services, 0)
+            return ""
 
         # 3️⃣ COMPLETELY NEW BOOKING
         elif msg_upper == "NEW_BOOKING":
