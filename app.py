@@ -10,6 +10,26 @@ load_dotenv()
 app = Flask(__name__)
 
 # ============================================
+# KEEP SERVER ALIVE (Render sleep fix)
+# ============================================
+
+import threading
+import time
+import requests
+
+def keep_alive():
+    while True:
+        try:
+            requests.get("https://nexsalon-whatsapp-booking.onrender.com/")
+            print("🔄 Self ping successful")
+        except Exception as e:
+            print("❌ Self ping failed:", e)
+
+        time.sleep(600)  # ping every 10 minutes
+
+threading.Thread(target=keep_alive, daemon=True).start()
+
+# ============================================
 # HEALTH CHECK
 # ============================================
 
@@ -74,7 +94,7 @@ def webhook():
     # ----------------------------------------
 
     if request.method == "HEAD":
-        return "", 200
+        return "OK", 200
 
 
     # ----------------------------------------
@@ -238,5 +258,6 @@ if __name__ == "__main__":
 
     app.run(
         host="0.0.0.0",
-        port=port
+        port=port,
+        threaded=True
     )

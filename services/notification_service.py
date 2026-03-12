@@ -144,17 +144,17 @@ def notify_customers_for_reminders():
         customer = booking.get("customer", {})
         phone = str(customer.get("phone", "")).strip()
 
-        # remove + if user stored it
-        phone = phone.replace("+", "")
+        phone = phone.replace("+", "").replace(" ", "").replace("-", "")
 
-        # add India country code if missing
-        if not phone.startswith("91"):
+        if len(phone) == 10:
             phone = "91" + phone
-
-        print("📞 Sending reminder to:", phone)
-        if len(phone) != 12:
+        elif phone.startswith("91") and len(phone) == 12:
+            pass
+        else:
             print("❌ Invalid phone number:", phone)
             continue
+
+        print("📞 Sending reminder to:", phone)
 
         customer_name = customer.get("name") or "Customer"
         salon_name = booking.get("salonName") or "Salon"
