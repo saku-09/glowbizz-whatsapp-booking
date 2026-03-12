@@ -33,6 +33,15 @@ from services.notification_service import (
     notify_owner_cancel
 )
 
+def safe_int(val, default=0):
+    try:
+        if val is None: return default
+        # Handle cases like "1,000" or floats
+        clean_val = str(val).replace(',', '').split('.')[0]
+        return int(clean_val)
+    except:
+        return default
+
 # ==================================================
 # SLOT GENERATOR
 # ==================================================
@@ -64,21 +73,19 @@ def generate_slots_by_duration(open_time, close_time, duration):
 # ==================================================
 
 def generate_calendar_dates():
-
-    today = datetime.now()
+    # Use IST for date generation
+    utc_now = datetime.utcnow()
+    ist_now = utc_now + timedelta(hours=5, minutes=30)
+    today = ist_now
 
     rows = []
-
     for i in range(7):
-
         d = today + timedelta(days=i)
-
         rows.append({
             "id": d.strftime("%d-%m-%Y"),
             "title": d.strftime("%A"),
             "description": d.strftime("%d %B %Y")
         })
-
     return rows
 
 
@@ -217,16 +224,13 @@ def _send_slot_page(user_id, all_slots, page):
 # ==================================================
 
 def handle_conversation(user_id, message):
-
     session = SESSIONS.get(user_id, {"state": "START", "data": {}})
-
     state = session["state"]
     data = session["data"]
-
     msg = message.strip()
 
-    # Prevent duplicate identical messages entirely
-    if session.get("last_message") == msg and state != "REBOOK_CONFIRM":
+    # Prevent duplicate identical messages
+    if session.get("last_message") == msg and state not in ["REBOOK_CONFIRM", "MAIN_MENU"]:
         return ""
 
     session["last_message"] = msg
@@ -256,11 +260,9 @@ def handle_conversation(user_id, message):
 
     # Handle rebook buttons globally
     if msg_upper in ["AUTO_REBOOK", "CHANGE_SERVICE", "NEW_BOOKING"]:
-        # Only allow transition if we have the needed data
-        if data.get("last_booking"):
-            session["state"] = "REBOOK_CONFIRM"
-            state = "REBOOK_CONFIRM"
-            SESSIONS[user_id] = session
+        session["state"] = "REBOOK_CONFIRM"
+        state = "REBOOK_CONFIRM"
+        SESSIONS[user_id] = session
 
     print("MESSAGE RECEIVED:", msg)
     print("DEBUG:", user_id, state, msg)
@@ -320,29 +322,54 @@ def handle_conversation(user_id, message):
             SESSIONS[user_id] = session
             return "📍 Please enter your City"
 
+        # ⚡ Rebook Last (Immediate Lookup)
+        if msg_upper == "REBOOK":
+            phone = normalize_phone(user_id)
+            booking = find_latest_past_booking_by_customer(phone=phone)
+            
+            if not booking:
+                return "❌ No previous appointment found to rebook. Please select 'Book Appointment' to start fresh."
+
+            data["last_booking"] = booking
+            re_services = booking.get("services", [])
+            if isinstance(re_services, dict): re_services = list(re_services.values())
+            data["selected_services"] = re_services
+            data["salon"] = {"id": booking["salonId"], "name": booking["salonName"]}
+            data["is_rebook"] = True
+            data["collection"] = f"{booking.get('collection', 'salon')}s"
+            data["business_type"] = booking.get('collection', 'salon')
+            
+            services_text = "\n".join([f"• {s['serviceName']}" for s in re_services if isinstance(s, dict)])
+            
+            send_whatsapp_buttons(
+                user_id,
+                f"🔁 *Rebook Last Appointment*\n\n"
+                f"Previous Services:\n{services_text}\n\n"
+                f"What would you like to do?",
+                [
+                    {"id": "AUTO_REBOOK", "title": "⚡ Quick Rebook"},
+                    {"id": "CHANGE_SERVICE", "title": "Change Service"},
+                    {"id": "NEW_BOOKING", "title": "New Booking"}
+                ]
+            )
+            session["state"] = "REBOOK_CONFIRM"
+            SESSIONS[user_id] = session
+            return ""
+
         # ⚡ Menu Navigation (Fallthrough)
-        if msg_upper in ["REBOOK", "MORE_MENU"]:
-            # Set state and message to fall through to the MAIN_MENU block below
+        if msg_upper == "MORE_MENU":
             state = "MAIN_MENU"
-            msg = msg_upper
-            msg_upper = msg_upper
             session["state"] = "MAIN_MENU"
             SESSIONS[user_id] = session
         else:
-            # For any other command, set state and return empty to let the engine handle it
             session["state"] = target_state
             SESSIONS[user_id] = session
             return ""
 
     if msg_upper in RESTART_KEYWORDS:
-
-        session = SESSIONS.get(user_id)
-
-        # Prevent sending welcome multiple times
-        if session and session.get("state") == "MAIN_MENU":
-            return ""
-
-        SESSIONS[user_id] = {"state": "MAIN_MENU", "data": {}}
+        # Clear session and start fresh
+        session = {"state": "MAIN_MENU", "data": {}}
+        SESSIONS[user_id] = session
 
         result = send_whatsapp_buttons(
             user_id,
@@ -805,8 +832,8 @@ def handle_conversation(user_id, message):
             salon = data["salon"]
             services = data.get("selected_services", [])
 
-            services_text = "\n".join([f"• {s['serviceName']}" for s in services])
-            total_amount = sum(int(s.get("price", 0)) for s in services)
+            services_text = "\n".join([f"• {s['serviceName']}" for s in services if s and isinstance(s, dict)])
+            total_amount = sum(safe_int(s.get("price")) for s in services if s and isinstance(s, dict))
 
             summary = (
                 "📋 *Appointment Summary*\n\n"
@@ -915,13 +942,6 @@ def handle_conversation(user_id, message):
         services = data.get("selected_services", [])
         services_text = "\n".join([f"• {s.get('serviceName', 'Service')}" for s in services if s and isinstance(s, dict)])
         
-        def safe_int(val, default=0):
-            try:
-                if val is None: return default
-                return int(float(str(val).replace(',', '')))
-            except:
-                return default
-
         total_amount = sum(safe_int(s.get("price")) for s in services if s and isinstance(s, dict))
 
         summary = (
@@ -957,6 +977,33 @@ def handle_conversation(user_id, message):
 # ==================================================
 
     if state == "CONFIRM":
+        # ⚡ Auto-Recovery: If data lost, try to restore from latest booking
+        if not data.get("salon") and not data.get("last_booking"):
+            print(f"🔄 Auto-Recovering CONFIRM for {user_id}")
+            booking = find_latest_past_booking_by_customer(phone=normalize_phone(user_id))
+            if booking:
+                data["last_booking"] = booking
+                data["salon"] = {"id": booking["salonId"], "name": booking["salonName"]}
+                data["business_type"] = booking.get("collection", "salon")
+                data["collection"] = f"{data['business_type']}s"
+                data["name"] = booking["customerName"]
+                data["phone"] = booking["customerPhone"]
+                data["gender"] = booking.get("customer", {}).get("gender", "Other")
+                data["age"] = booking.get("customer", {}).get("age", "")
+                
+                re_services = booking.get("services", [])
+                if isinstance(re_services, dict): re_services = list(re_services.values())
+                data["selected_services"] = re_services
+                
+                # Check for needed rebook fields if missing
+                if not data.get("date"): data["date"] = booking["date"]
+                if not data.get("time"): data["time"] = booking["startTime"]
+                
+                SESSIONS[user_id]["data"] = data
+            else:
+                session["state"] = "MAIN_MENU"
+                SESSIONS[user_id] = session
+                return "⚠️ Session lost. Please type MENU to restart."
 
         if msg_upper in ["CONFIRM", "CONFIRM BOOKING"]:
 
@@ -1241,11 +1288,24 @@ def handle_conversation(user_id, message):
 
     if state == "REBOOK_CONFIRM":
         print(f"DEBUG Trace: Entering REBOOK_CONFIRM block for {user_id}")
+        
         booking = data.get("last_booking")
+        
+        # ⚡ Auto-Recovery: If data is lost (e.g. server restart), try to re-fetch
         if not booking:
-            session["state"] = "MAIN_MENU"
-            SESSIONS[user_id] = session
-            return "⚠️ Session lost. Please type MENU to start over."
+            print(f"🔄 Auto-Recovering last booking for {user_id}")
+            booking = find_latest_past_booking_by_customer(phone=normalize_phone(user_id))
+            if booking:
+                data["last_booking"] = booking
+                data["salon"] = {"id": booking["salonId"], "name": booking["salonName"]}
+                data["is_rebook"] = True
+                data["collection"] = f"{booking.get('collection', 'salon')}s"
+                data["business_type"] = booking.get('collection', 'salon')
+                SESSIONS[user_id]["data"] = data
+            else:
+                session["state"] = "MAIN_MENU"
+                SESSIONS[user_id] = session
+                return "❌ No previous appointment found to rebook. Please type MENU."
 
         print("REBOOK_CONFIRM STATE")
         print("USER MESSAGE:", msg)
@@ -1305,10 +1365,7 @@ def handle_conversation(user_id, message):
                     services_text_items.append(f"• {s}")
             
             services_text = "\n".join(services_text_items) if services_text_items else "No services"
-            total_amount = 0
-            for s in services:
-                if isinstance(s, dict):
-                    total_amount += int(s.get("price", 0))
+            total_amount = sum(safe_int(s.get("price")) for s in services if s and isinstance(s, dict))
 
             summary = (
                 "⚡ *Auto Slot Found*\n\n"

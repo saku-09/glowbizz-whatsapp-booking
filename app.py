@@ -181,7 +181,13 @@ def webhook():
                 # PROCESS CONVERSATION
                 # ----------------------------
 
-                reply = handle_conversation(phone, message)
+                try:
+                    reply = handle_conversation(phone, message)
+                except Exception as e:
+                    import traceback
+                    print(f"❌ CONVERSATION ERROR: {e}")
+                    traceback.print_exc()
+                    reply = "⚠️ Something went wrong. Please type MENU to start over."
 
                 print(f"🤖 Bot Reply: {reply}")
 
