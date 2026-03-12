@@ -854,6 +854,13 @@ def get_customer_active_bookings(phone):
             continue
 
         for salon_id, bookings in salon_items:
+            # Robust conversion of bookings node to dict
+            if isinstance(bookings, list):
+                temp = {}
+                for idx, b in enumerate(bookings):
+                    if b: temp[str(idx)] = b
+                bookings = temp
+                
             if not isinstance(bookings, dict):
                 continue
 

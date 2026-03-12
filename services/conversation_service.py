@@ -241,6 +241,9 @@ def handle_conversation(user_id, message):
     
     BUTTON_NORMALIZER = {
         "MY BOOKINGS": "MY_BOOKINGS",
+        "MY BOOKING": "MY_BOOKINGS",
+        "VIEW BOOKINGS": "MY_BOOKINGS",
+        "SHOW BOOKINGS": "MY_BOOKINGS",
         "REBOOK LAST": "REBOOK",
         "BOOK APPOINTMENT": "BOOK",
         "MORE OPTIONS": "MORE_MENU",
@@ -1603,6 +1606,8 @@ def handle_conversation(user_id, message):
 # ==================================================
 
     if state == "MY_BOOKINGS_PHONE":
+        msg = msg.strip()
+        print(f"🔍 DEBUG MY_BOOKINGS_PHONE: Input='{msg}', Normalized='{normalize_phone(msg)}'")
         bookings = get_customer_active_bookings(msg)
 
         if not bookings:
@@ -1611,7 +1616,10 @@ def handle_conversation(user_id, message):
 
         response = "📋 *Your Appointments*\n\n"
 
-        now = datetime.now()
+        # Use IST for comparison
+        utc_now = datetime.utcnow()
+        ist_now = utc_now + timedelta(hours=5, minutes=30)
+        now = ist_now
 
         upcoming = []
         past = []
