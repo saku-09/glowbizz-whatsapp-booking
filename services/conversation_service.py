@@ -530,10 +530,17 @@ def handle_conversation(user_id, message):
 
         elif msg_upper in ["MY_BOOKINGS", "MY BOOKINGS"]:
 
+            phone = normalize_phone(user_id)
+
+            bookings = get_customer_active_bookings(phone)
+
+            if not bookings:
+                return "❌ No appointments found."
+
             session["state"] = "MY_BOOKINGS_PHONE"
             SESSIONS[user_id] = session
 
-            return "📱 Please enter your phone number to view your appointments"
+            return handle_conversation(user_id, phone)
 
         else:
             return "Please select a valid option."
