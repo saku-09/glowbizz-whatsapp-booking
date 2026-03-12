@@ -692,21 +692,39 @@ def get_salons_by_city(city):
     # ── DIAGNOSTIC: print raw keys of first salon to identify field names ──
     if salons:
         first_key = next(iter(salons))
-        print("🔍 RAW SALON KEYS:", list(salons[first_key].keys()))
-        print("🔍 RAW SALON DATA:", salons[first_key])
+        first_salon = salons[first_key]
+
+        if isinstance(first_salon, dict):
+            print("🔍 RAW SALON KEYS:", list(first_salon.keys()))
+            print("🔍 RAW SALON DATA:", first_salon)
+        else:
+            print("⚠️ First salon is not a valid object:", first_salon)
+
     else:
         print("⚠️ No salons node found in Firebase at all!")
     # ─────────────────────────────────────────────────────────────────────────
 
     results = []
 
+   
     # SALONS
     for salon_id, salon in salons.items():
 
-    
-        
-        if not salon.get("activeSlot", False):  # Filter those without activeSlot: true
+        if not isinstance(salon, dict):
             continue
+
+        status = salon.get("status")
+        active_slot = salon.get("activeSlot")
+
+        # Apply rules
+        if status is not None:
+            if status != "active":
+                continue
+            if active_slot is False:
+                continue
+        elif active_slot is not None:
+            if active_slot is False:
+                continue
 
         address = str(salon.get("address", "")).lower()
         branch  = str(salon.get("branch",  "")).lower()
@@ -728,10 +746,20 @@ def get_salons_by_city(city):
     # SPAS
     for spa_id, spa in spas.items():
 
-       
-
-        if not spa.get("activeSlot", False):  # Filter those without activeSlot: true
+        if not isinstance(spa, dict):
             continue
+
+        status = spa.get("status")
+        active_slot = spa.get("activeSlot")
+
+        if status is not None:
+            if status != "active":
+                continue
+            if active_slot is False:
+                continue
+        elif active_slot is not None:
+            if active_slot is False:
+                continue
 
         address = str(spa.get("address", "")).lower()
         branch  = str(spa.get("branch",  "")).lower()
