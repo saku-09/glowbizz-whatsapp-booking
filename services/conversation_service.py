@@ -887,6 +887,56 @@ def handle_conversation(user_id, message):
 
             return ""
 
+        # ⚡ NEW: AUTO-DETECT RETURNING USER (1-TAP)
+        phone = normalize_phone(user_id)
+        existing_booking = find_latest_active_booking_by_customer(phone=phone)
+
+        if existing_booking:
+            print(f"✅ AUTO-FILLING DETAILS FOR RETURNING USER: {user_id}")
+            data["name"] = existing_booking["customerName"]
+            data["phone"] = existing_booking["customerPhone"]
+            data["gender"] = existing_booking.get("customer", {}).get("gender", "Other")
+            data["age"] = existing_booking.get("customer", {}).get("age", "")
+
+            # ⚡ APPLY GENDER-BASED PRICING FOR RETURNING USER
+            gender = data["gender"]
+            for s in data.get("selected_services", []):
+                if s.get("genderType") == "Default":
+                    s["price"] = safe_int(s.get("price"))
+                elif gender == "Male":
+                    s["price"] = safe_int(s.get("malePrice"))
+                elif gender == "Female":
+                    s["price"] = safe_int(s.get("femalePrice"))
+
+            salon = data["salon"]
+            services = data.get("selected_services", [])
+            services_text = "\n".join([f"• {s['serviceName']}" for s in services if s and isinstance(s, dict)])
+            total_amount = sum(safe_int(s.get("price")) for s in services if s and isinstance(s, dict))
+
+            summary = (
+                "📋 *Appointment Summary*\n\n"
+                f"👤 Name: {data['name']}\n"
+                f"📱 Phone: {data['phone']}\n"
+                f"⚧ Gender: {data['gender']}\n"
+                f"🎂 Age: {data['age']}\n\n"
+                f"🏬 Salon: {salon['name']}\n"
+                f"💆 Services:\n{services_text}\n"
+                f"💰 Total: ₹{total_amount}\n"
+                f"📅 Date: {data['date']}\n"
+                f"⏰ Time: {data['time']}\n\n"
+                "Please confirm your booking 👇"
+            )
+
+            session["state"] = "CONFIRM"
+            SESSIONS[user_id] = session
+
+            send_whatsapp_buttons(
+                user_id,
+                summary,
+                [{"id": "CONFIRM", "title": "Confirm"}]
+            )
+            return ""
+
         session["state"] = "NAME"
         SESSIONS[user_id] = session
 
@@ -956,58 +1006,50 @@ def handle_conversation(user_id, message):
                 return "Enter valid age."
 
             data["age"] = age
-            session["state"] = "PHONE"
+
+            # ✅ AUTO FETCH PHONE FROM WHATSAPP
+            data["phone"] = normalize_phone(user_id)
+
+            salon = data["salon"]
+            services = data.get("selected_services", [])
+
+            services_text = "\n".join([
+                f"• {s.get('serviceName', 'Service')}" 
+                for s in services if s and isinstance(s, dict)
+            ])
+
+            total_amount = sum(
+                safe_int(s.get("price")) 
+                for s in services if s and isinstance(s, dict)
+            )
+
+            summary = (
+                "📋 *Appointment Summary*\n\n"
+                f"👤 Name: {data['name']}\n"
+                f"📱 Phone: {data['phone']}\n"
+                f"⚧ Gender: {data['gender']}\n"
+                f"🎂 Age: {data['age']}\n\n"
+                f"🏬 Salon: {salon['name']}\n"
+                f"💆 Services:\n{services_text}\n"
+                f"💰 Total: ₹{total_amount}\n"
+                f"📅 Date: {data['date']}\n"
+                f"⏰ Time: {data['time']}\n\n"
+                "Please confirm your booking 👇"
+            )
+
+            session["state"] = "CONFIRM"
             SESSIONS[user_id] = session
 
-            return "📱 Enter your 10 digit phone number"
+            send_whatsapp_buttons(
+                user_id,
+                summary,
+                [{"id": "CONFIRM", "title": "Confirm"}]
+            )
+
+            return ""
 
         except:
             return "Enter valid age."
-
-
-# ==================================================
-# PHONE
-# ==================================================
-
-    if state == "PHONE":
-
-        if not msg.isdigit() or len(msg) != 10:
-            return "Enter valid 10 digit phone."
-
-        data["phone"] = msg
-
-        salon = data["salon"]
-        services = data.get("selected_services", [])
-        services_text = "\n".join([f"• {s.get('serviceName', 'Service')}" for s in services if s and isinstance(s, dict)])
-        
-        total_amount = sum(safe_int(s.get("price")) for s in services if s and isinstance(s, dict))
-
-        summary = (
-            "📋 *Appointment Summary*\n\n"
-            f"👤 Name: {data['name']}\n"
-            f"📱 Phone: {data['phone']}\n"
-            f"⚧ Gender: {data['gender']}\n"
-            f"🎂 Age: {data['age']}\n\n"
-            f"🏬 Salon: {salon['name']}\n"
-            f"💆 Services:\n{services_text}\n"
-            f"💰 Total: ₹{total_amount}\n"
-            f"📅 Date: {data['date']}\n"
-            f"⏰ Time: {data['time']}\n\n"
-            "Please confirm your booking 👇"
-        )
-
-        session["state"] = "CONFIRM"
-        SESSIONS[user_id] = session
-
-        send_whatsapp_buttons(
-            user_id,
-            summary,
-            [
-                {"id": "CONFIRM", "title": "Confirm"}
-            ]
-        )
-
-        return ""
 
 
 # ==================================================
